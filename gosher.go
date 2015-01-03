@@ -1,30 +1,40 @@
 package gosher
 
+import "golang.org/x/crypto/ssh"
+
 const (
-    PASSWORD_AUTH = iota
-    KEY_AUTH
-    KEY_PATH_AUTH
+	PASSWORD_AUTH = iota
+	KEY_AUTH
+	KEY_PATH_AUTH
 )
 
-type sshConnection struct{
-   host string
-   authenticationType int
-   authentication string
-   keepAlive bool
+type SshClient struct {
+	host                string
+	clientConfiguration ssh.ClientConfig
+	keepAlive           bool
 }
 
-type sshResponse struct {
-	errorMessage string
-   exitCode int
-   stdOut string
-   stdErr string
+func NewSshClient(host string, authenticationType int, authentication string, keepAlive bool) *SshClient {
+	switch authenticationType {
+	case PASSWORD_AUTH:
+		return newPasswordAuthenticatedClient(host, authentication)
+	case KEY_AUTH:
+		return newKeyAuthenticatedClient(host, authentication)
+	case KEY_PATH_AUTH:
+		key := getKeyFromFile(authentication)
+		return newKeyAuthenticatedClient(host, key)
+	}
 }
 
-func (sr *SshResponse) Error() string {
-	return sr.errorMessage
-}
+func newPasswordAuthenticatedClient(host string, password string) *SshClient {}
 
-func NewSshConnection() *SshConnection                                                           {}
-func (s *SshConnection) ExecuteCommand(command string) SshResponse                               {}
-func (s *SshConnection) ExecuteScript(scriptPath string) SshResponse                             {}
-func (s *SshConnection) ExecuteOnFile(filePath string, fn func(fileContents string)) SshResponse {}
+func newKeyAuthenticatedClient(host string, key string) *SshClient {}
+
+func getKeyFromFile(keyPath string) string {}
+
+func (s *SshClient) ExecuteCommand(command string) (SshResponse, error)   {}
+func (s *SshClient) ExecuteScript(scriptPath string) (SshResponse, error) {}
+func (s *SshClient) ExecuteOnFile(filePath string, fn func(fileContent string) string) (SshResponse, error) {
+}
+func (s *SshClient) DownloadFile(remotePath string, localPath string) (SshResponse, error) {}
+func (s *SshClient) UploadFile(localPath string, remotePath string) (SshResponse, error)   {}
