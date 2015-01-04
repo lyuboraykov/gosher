@@ -1,40 +1,75 @@
 package gosher
 
-import "golang.org/x/crypto/ssh"
+import (
+	"golang.org/x/crypto/ssh"
+	"ioutil"
+)
 
 const (
 	PASSWORD_AUTH = iota
 	KEY_AUTH
-	KEY_PATH_AUTH
 )
 
-type SshClient struct {
+type sshClient struct {
 	host                string
 	clientConfiguration ssh.ClientConfig
-	keepAlive           bool
 }
 
-func NewSshClient(host string, authenticationType int, authentication string, keepAlive bool) *SshClient {
+func NewSshClient(host string, user string, authenticationType int, authentication string) *sshClient {
 	switch authenticationType {
 	case PASSWORD_AUTH:
-		return newPasswordAuthenticatedClient(host, authentication)
+		return newPasswordAuthenticatedClient(host, user, authentication)
 	case KEY_AUTH:
-		return newKeyAuthenticatedClient(host, authentication)
-	case KEY_PATH_AUTH:
-		key := getKeyFromFile(authentication)
-		return newKeyAuthenticatedClient(host, key)
+		return newKeyAuthenticatedClient(host, user, authentication)
 	}
 }
 
-func newPasswordAuthenticatedClient(host string, password string) *SshClient {}
-
-func newKeyAuthenticatedClient(host string, key string) *SshClient {}
-
-func getKeyFromFile(keyPath string) string {}
-
-func (s *SshClient) ExecuteCommand(command string) (SshResponse, error)   {}
-func (s *SshClient) ExecuteScript(scriptPath string) (SshResponse, error) {}
-func (s *SshClient) ExecuteOnFile(filePath string, fn func(fileContent string) string) (SshResponse, error) {
+func newPasswordAuthenticatedClient(host string, user string, password string) *sshClient {
+	configuration := &ssh.ClientConfig{
+		User: user,
+		Auth: []ssh.AuthMethod{
+			ssh.Password(password),
+		},
+	}
+	client := &sshClient{
+		host:                host,
+		clientConfiguration: configuration,
+	}
+	return client
 }
-func (s *SshClient) DownloadFile(remotePath string, localPath string) (SshResponse, error) {}
-func (s *SshClient) UploadFile(localPath string, remotePath string) (SshResponse, error)   {}
+
+func newKeyAuthenticatedClient(host string, user string, key string) (*sshClient, error) {
+	if key, err := getKeyFile(); err != nil {
+		return _, err
+	}
+	configuration := &ssh.ClientConfig{
+		User: username,
+		Auth: []ssh.AuthMethod{
+			ssh.PublicKeys(key),
+		},
+	}
+	client := &sshClient{
+		host:                host,
+		clientConfiguration: configuration,
+	}
+	return client
+}
+
+func getKeyFromFile(keyPath string) (ssh.Signer, error) {
+	buf, err := ioutil.ReadFile(keyPath)
+	if err != nil {
+		return _, err
+	}
+	key, err = ssh.ParsePrivateKey(buf)
+	if err != nil {
+		return key, err
+	}
+	return key, err
+}
+
+func (s *sshClient) ExecuteCommand(command string) (SshResponse, error)   {}
+func (s *sshClient) ExecuteScript(scriptPath string) (SshResponse, error) {}
+func (s *sshClient) ExecuteOnFile(filePath string, fn func(fileContent string) string) (SshResponse, error) {
+}
+func (s *sshClient) DownloadFile(remotePath string, localPath string) (SshResponse, error) {}
+func (s *sshClient) UploadFile(localPath string, remotePath string) (SshResponse, error)   {}

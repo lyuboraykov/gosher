@@ -2,6 +2,6 @@ package gosher
 
 type sshResponse struct {
 	exitCode int
-	stdOut   string
-	stdErr   string
+	stdOut   bytes.Buffer
+	stdErr   bytes.Buffer
 }
