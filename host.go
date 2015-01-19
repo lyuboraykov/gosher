@@ -14,3 +14,9 @@ type Host struct {
 	authentication     string
 	resultChannel      chan *SshResponse
 }
+
+// Constructor method for the Host type
+func NewHost(hostAddress string, authenticationType int, authentication string,
+	resultChannel chan *SshResponse) *Host {
+
+}
