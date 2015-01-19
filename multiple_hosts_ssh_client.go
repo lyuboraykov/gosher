@@ -29,13 +29,26 @@ func (msc *multipleHostsSshClient) ExecuteCommandOnSelectedHosts(command string,
 }
 
 // Uploads a file to all hosts of the MultipleHostsSshClient
-// filePath - the path to the file on the local machine
+// localFilePath - the path to the file on the local machine
+// remoteFilePath - the path where the file should be uploaded on the remote machines
 // The sshResponse is passed via the channels of the hosts
 // Returns an error if any has occured
-func (msc *multipleHostsSshClient) UploadFileToAllHosts(filePath string) error {}
+func (msc *multipleHostsSshClient) UploadFileToAllHosts(localFilePath string, remoteFilePath string) error {}
 
 // Uploads a file only to selected hosts of the MultipleHostsSshClient's list
-// filePath - the path to the file on the local machine
+// localFilePath - the path to the file on the local machine
+// remoteFilePath - the path where the file should be uploaded on the remote machines
 // The sshResponse is passed via the channels of the hosts
 // Returns an error if any has occured
-func (msc *multipleHostsSshClient) UploadFileToSelectedHosts(command string, hostIndexes ...int) error {}
+func (msc *multipleHostsSshClient) UploadFileToSelectedHosts(localFilePath string, remoteFilePath string, hostIndexes ...int) error {}
+
+func (msc *multipleHostsSshClient) DownloadFileFromAllHosts(remoteFilePath string, 
+      localFilePath string, renamingFunction(fileName string, host *Host) string) error {}
+
+func (msc *multipleHostsSshClient) DownloadFileFromSelectedHosts(remoteFilePath string, 
+      localFilePath string, renamingFunction(fileName string, host *Host) string, hostIndexes ...int) error {}
+
+func (msc *multipleHostsSshClient) executeOnFileOnAllHosts(filePath string, alterContentsFunction func(fileContent string) string) error {}
+
+func (msc *multipleHostsSshClient) executeOnFileOnSelectedHosts(filePath string, 
+   alterContentsFunction func(fileContent string, hostIndexes ...int) string) error {}

@@ -119,10 +119,10 @@ func (s *sshClient) ExecuteScript(scriptPath string) (SshResponse, error) {}
 // Executes an function on a remote text file.
 // Can be used as an alternative of executing sed or awk on the remote machine.
 // filePath - the path of the file on the remote machine
-// fn - the function to be executed, the contents of the file as string will be
+// alterContentsFunction - the function to be executed, the contents of the file as string will be
 // passed to it and it should return the modified contents.
 // Returns SshResponse and an error if any has occured.
-func (s *sshClient) ExecuteOnFile(filePath string, fn func(fileContent string) string) (SshResponse, error) {
+func (s *sshClient) ExecuteOnFile(filePath string, alterContentsFunction func(fileContent string) string) (SshResponse, error) {
 }
 
 // Downloads file from the remote machine.
