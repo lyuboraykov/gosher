@@ -1,9 +1,9 @@
 package gosher
 
-type sshConnectionError struct {
+type SshConnectionError struct {
 	errorMessage string
 }
 
-func (se *sshConnectionError) Error() string {
+func (se *SshConnectionError) Error() string {
 	return se.errorMessage
 }
