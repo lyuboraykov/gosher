@@ -6,12 +6,22 @@ package gosher
 import (
 	"fmt"
 	"golang.org/x/crypto/ssh"
+	"io"
 	"io/ioutil"
+	"os"
+	"path/filepath"
 )
 
 const (
 	PASSWORD_AUTH = iota
 	KEY_AUTH
+)
+
+const (
+	SCP_PUSH_BEGIN_FOLDER     = "D"
+	SCP_PUSH_BEGIN_END_FOLDER = " 0"
+	SCP_PUSH_END_FOLDER       = "E"
+	SCP_PUSH_END              = "\x00"
 )
 
 type sshClient struct {
@@ -84,7 +94,6 @@ func getKeyFromFile(keyPath string) (ssh.Signer, error) {
 
 func (s *sshClient) newSession() (*ssh.Session, error) {
 	hostAndPort := fmt.Sprintf("%s:%d", s.hostAddress, s.Port)
-	fmt.Println(hostAndPort)
 	client, clientErr := ssh.Dial("tcp", hostAndPort, &s.clientConfiguration)
 	if clientErr != nil {
 		errorMessage := "There was an error while creating a client: " +
@@ -116,7 +125,7 @@ func (s *sshClient) ExecuteCommand(command string) (*SshResponse, error) {
 	if err := session.Run(command); err != nil {
 		errorMessage := "There was an error while executing the command: " +
 			err.Error()
-		return nil, NewSshConnectionError(errorMessage)
+		return response, NewSshConnectionError(errorMessage)
 	}
 	return response, nil
 }
@@ -142,15 +151,72 @@ func (s *sshClient) ExecuteOnFile(filePath string, alterContentsFunction func(fi
 // Can be used as an alternative to scp.
 // remotePath - the path to the file on the remote machine
 // localPath - the path on the local machine where the file will be downloaded
+// isRecursive - whether we are working with a folder or with a file
 // Returns an SshResponse and an error if any has occured.
-func (s *sshClient) Download(remotePath string, localPath string, recursive bool) (*SshResponse, error) {
-	return nil, nil
+func (s *sshClient) Download(remotePath string, localPath string, isRecursive bool) (*SshResponse, error) {
+	if isRecursive {
+		return s.downloadFolder(localPath, remotePath)
+	}
+	return s.downloadFile(localPath, remotePath)
 }
 
 // Uploads file to the remote machine.
 // localPath - the file on the local machine to be uploaded
 // remotePath - the path on the remote machine where the file will be uploaded
+// isRecursive - whether we are working with a folder or with a file
 // Returns an SshResponse and an error if any has occured.
-func (s *sshClient) Upload(localPath string, remotePath string, recursive bool) (*SshResponse, error) {
+func (s *sshClient) Upload(localPath string, remotePath string, isRecursive bool) (*SshResponse, error) {
+	if isRecursive {
+		return s.uploadFolder(localPath, remotePath)
+	}
+	return s.uploadFile(localPath, remotePath)
+}
+
+func (s *sshClient) uploadFile(localPath string, remotePath string) (*SshResponse, error) {
+	session, sessionErr := s.newSession()
+	if sessionErr != nil {
+		return nil, sessionErr
+	}
+	defer session.Close()
+	response := new(SshResponse)
+	session.Stdout = &response.StdOut
+	session.Stderr = &response.StdErr
+	response.HostAddress = s.hostAddress
+
+	go func() {
+		inPipe, _ := session.StdinPipe()
+		defer inPipe.Close()
+
+		fileSrc, _ := os.Open(localPath)
+
+		//Get file size
+		srcStat, _ := fileSrc.Stat()
+
+		fmt.Fprintln(inPipe, "C0644", srcStat.Size(), filepath.Base(remotePath))
+		io.Copy(inPipe, fileSrc)
+		fmt.Fprint(inPipe, "\x00")
+	}()
+
+	if err := session.Run("/usr/bin/scp -qvrt " + filepath.Dir(remotePath)); err != nil {
+		return response, NewSshConnectionError("There was an error while uploading: " + err.Error())
+	}
+	return response, nil
+}
+
+func getPermissions(f *os.File) (perm string) {
+	fileStat, _ := f.Stat()
+	mod := fileStat.Mode()
+	return fmt.Sprintf("%#o", uint32(mod))
+}
+
+func (s *sshClient) uploadFolder(localPath string, remotePath string) (*SshResponse, error) {
+	return nil, nil
+}
+
+func (s *sshClient) downloadFile(localPath string, remotePath string) (*SshResponse, error) {
+	return nil, nil
+}
+
+func (s *sshClient) downloadFolder(localPath string, remotePath string) (*SshResponse, error) {
 	return nil, nil
 }

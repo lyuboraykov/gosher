@@ -9,7 +9,6 @@ import "bytes"
 // StdErr - the standard error stream of the command.
 type SshResponse struct {
 	HostAddress string
-	ExitCode    int
 	StdOut      bytes.Buffer
 	StdErr      bytes.Buffer
 }
