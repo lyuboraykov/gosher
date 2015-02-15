@@ -11,3 +11,9 @@ type SshConnectionError struct {
 func (se *SshConnectionError) Error() string {
 	return se.errorMessage
 }
+
+func NewSshConnectionError(errorMessage string) *SshConnectionError {
+	return &SshConnectionError{
+		errorMessage: errorMessage,
+	}
+}

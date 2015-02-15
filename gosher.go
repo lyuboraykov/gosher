@@ -4,9 +4,9 @@
 package gosher
 
 import (
+	"fmt"
 	"golang.org/x/crypto/ssh"
-	"ioutil"
-	"strconv"
+	"io/ioutil"
 )
 
 const (
@@ -27,14 +27,13 @@ type sshClient struct {
 // hostAddress - the hostname or ip of the remote machine
 // user - the username for the machine
 // authenticationType - the type of authentication used, can be PASSWORD_AUTH or KEY_AUTH
-// authentication - this is the password or the path to the key accorrding to the authenticationType
-func NewSshClient(hostAddress string, user string, authenticationType int, authentication string) *sshClient {
-	switch authenticationType {
-	case PASSWORD_AUTH:
-		return newPasswordAuthenticatedClient(hostAddress, user, authentication)
-	case KEY_AUTH:
-		return newKeyAuthenticatedClient(hostAddress, user, authentication)
+// authentication - this is the password or the path to the path to the key accorrding to the authenticationType
+func NewSshClient(hostAddress string, user string, authenticationType int, authentication string) (*sshClient, error) {
+	if authenticationType == PASSWORD_AUTH {
+		return newPasswordAuthenticatedClient(hostAddress, user, authentication), nil
 	}
+	keyAuthenticatedClient, err := newKeyAuthenticatedClient(hostAddress, user, authentication)
+	return keyAuthenticatedClient, err
 }
 
 func newPasswordAuthenticatedClient(hostAddress string, user string, password string) *sshClient {
@@ -46,28 +45,29 @@ func newPasswordAuthenticatedClient(hostAddress string, user string, password st
 	}
 	client := &sshClient{
 		hostAddress:         hostAddress,
-		clientConfiguration: configuration,
+		clientConfiguration: *configuration,
 		Port:                22,
 	}
 	return client
 }
 
-func newKeyAuthenticatedClient(hostAddress string, user string, key string) (*sshClient, error) {
-	if key, err := getKeyFile(); err != nil {
+func newKeyAuthenticatedClient(hostAddress string, user string, keyPath string) (*sshClient, error) {
+	key, err := getKeyFromFile(keyPath)
+	if err != nil {
 		return nil, err
 	}
 	configuration := &ssh.ClientConfig{
-		User: username,
+		User: user,
 		Auth: []ssh.AuthMethod{
 			ssh.PublicKeys(key),
 		},
 	}
 	client := &sshClient{
 		hostAddress:         hostAddress,
-		clientConfiguration: configuration,
+		clientConfiguration: *configuration,
 		Port:                22,
 	}
-	return client
+	return client, err
 }
 
 func getKeyFromFile(keyPath string) (ssh.Signer, error) {
@@ -75,7 +75,7 @@ func getKeyFromFile(keyPath string) (ssh.Signer, error) {
 	if err != nil {
 		return nil, err
 	}
-	key, err = ssh.ParsePrivateKey(buf)
+	key, err := ssh.ParsePrivateKey(buf)
 	if err != nil {
 		return key, err
 	}
@@ -83,15 +83,19 @@ func getKeyFromFile(keyPath string) (ssh.Signer, error) {
 }
 
 func (s *sshClient) newSession() (*ssh.Session, error) {
-	hostAndPort := s.hostAddress + strconv.Itoa(s.Port)
-
-	client, clientErr := Dial("tcp", hostAndPort, s.clientConfiguration)
+	hostAndPort := fmt.Sprintf("%s:%d", s.hostAddress, s.Port)
+	fmt.Println(hostAndPort)
+	client, clientErr := ssh.Dial("tcp", hostAndPort, &s.clientConfiguration)
 	if clientErr != nil {
-		return nil, clientErr
+		errorMessage := "There was an error while creating a client: " +
+			clientErr.Error()
+		return nil, NewSshConnectionError(errorMessage)
 	}
 	session, sessionErr := client.NewSession()
-	if err != nil {
-		return nil, sessionErr
+	if sessionErr != nil {
+		errorMessage := "There was an error while establishing a session: " +
+			sessionErr.Error()
+		return nil, NewSshConnectionError(errorMessage)
 	}
 	return session, nil
 }
@@ -99,22 +103,30 @@ func (s *sshClient) newSession() (*ssh.Session, error) {
 // Executes shell command on the remote machine synchronously.
 // command - the shell command to be executed on the machine.
 // Returns an SshResponse and an error if any has occured.
-func (s *sshClient) ExecuteCommand(command string) (SshResponse, error) {
-	session := s.newSession()
-	response := new(SshResponse)
-	session.Stdout = response.StdOut
-	session.Stderr = response.StdErr
-
-	if err := session.Run(command); err != nil {
-		panic("Failed to run: " + err.Error())
+func (s *sshClient) ExecuteCommand(command string) (*SshResponse, error) {
+	session, sessionErr := s.newSession()
+	if sessionErr != nil {
+		return nil, sessionErr
 	}
-	fmt.Println(b.String())
+	defer session.Close()
+	response := new(SshResponse)
+	session.Stdout = &response.StdOut
+	session.Stderr = &response.StdErr
+	response.HostAddress = s.hostAddress
+	if err := session.Run(command); err != nil {
+		errorMessage := "There was an error while executing the command: " +
+			err.Error()
+		return nil, NewSshConnectionError(errorMessage)
+	}
+	return response, nil
 }
 
 // Executes a shell script file on the remote machine.
 // scriptPath - the path to the script on the local machine
 // Returns an SshResponse and an error if any has occured
-func (s *sshClient) ExecuteScript(scriptPath string) (SshResponse, error) {}
+func (s *sshClient) ExecuteScript(scriptPath string) (*SshResponse, error) {
+	return nil, nil
+}
 
 // Executes an function on a remote text file.
 // Can be used as an alternative of executing sed or awk on the remote machine.
@@ -122,7 +134,8 @@ func (s *sshClient) ExecuteScript(scriptPath string) (SshResponse, error) {}
 // alterContentsFunction - the function to be executed, the contents of the file as string will be
 // passed to it and it should return the modified contents.
 // Returns SshResponse and an error if any has occured.
-func (s *sshClient) ExecuteOnFile(filePath string, alterContentsFunction func(fileContent string) string) (SshResponse, error) {
+func (s *sshClient) ExecuteOnFile(filePath string, alterContentsFunction func(fileContent string) string) (*SshResponse, error) {
+	return nil, nil
 }
 
 // Downloads file from the remote machine.
@@ -130,10 +143,14 @@ func (s *sshClient) ExecuteOnFile(filePath string, alterContentsFunction func(fi
 // remotePath - the path to the file on the remote machine
 // localPath - the path on the local machine where the file will be downloaded
 // Returns an SshResponse and an error if any has occured.
-func (s *sshClient) DownloadFile(remotePath string, localPath string) (SshResponse, error) {}
+func (s *sshClient) Download(remotePath string, localPath string, recursive bool) (*SshResponse, error) {
+	return nil, nil
+}
 
 // Uploads file to the remote machine.
 // localPath - the file on the local machine to be uploaded
 // remotePath - the path on the remote machine where the file will be uploaded
 // Returns an SshResponse and an error if any has occured.
-func (s *sshClient) UploadFile(localPath string, remotePath string) (SshResponse, error) {}
+func (s *sshClient) Upload(localPath string, remotePath string, recursive bool) (*SshResponse, error) {
+	return nil, nil
+}

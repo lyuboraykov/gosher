@@ -1,5 +1,7 @@
 package gosher
 
+import "bytes"
+
 // Standard response returned from ssh operations
 // HostAddress - the address/host of the machine the operation was executed on
 // ExitCode - the exit code of the exeecuted command.

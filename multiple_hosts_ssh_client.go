@@ -1,7 +1,7 @@
 package gosher
 
 type multipleHostsSshClient struct {
-   hosts Host[]
+	hosts []Host
 }
 
 // Constructor method for multipleHostsSshClient
@@ -9,15 +9,15 @@ type multipleHostsSshClient struct {
 // hosts - slice of items of type Host - all the hosts that are going
 // to have operations executed on
 func NewMultipleHostsSshClient(hosts ...*Host) (*multipleHostsSshClient, error) {
-
+	return nil, nil
 }
 
 // Executes shell command on all hosts in a separate goroutine for each.
-// The result from execution is passed via the hosts' channels 
+// The result from execution is passed via the hosts' channels
 // command - the shell command to be executed on the hosts
 // Returns an error if any has occured.
 func (msc *multipleHostsSshClient) ExecuteCommandOnAllHosts(command string) error {
-
+	return nil
 }
 
 // Executes shell script only on selected hosts from the client's list
@@ -25,15 +25,15 @@ func (msc *multipleHostsSshClient) ExecuteCommandOnAllHosts(command string) erro
 // command - the shell command to be executed on the hosts
 // Returns an error if any has occured.
 func (msc *multipleHostsSshClient) ExecuteCommandOnSelectedHosts(command string, hostIndexes ...int) error {
-
+	return nil
 }
 
 // Executes shell script on all hosts in a separate goroutine for each.
-// The result from execution is passed via the hosts' channels 
+// The result from execution is passed via the hosts' channels
 // filePath - the path to the file on the local machine
 // Returns an error if any has occured.
 func (msc *multipleHostsSshClient) ExecuteScriptOnAllHosts(filePath string) error {
-
+	return nil
 }
 
 // Executes shell script only on selected hosts from the client's list
@@ -41,7 +41,7 @@ func (msc *multipleHostsSshClient) ExecuteScriptOnAllHosts(filePath string) erro
 // filePath - the path to the file on the local machine
 // Returns an error if any has occured.
 func (msc *multipleHostsSshClient) ExecuteScriptOnSelectedHosts(filePath string, hostIndexes ...int) error {
-
+	return nil
 }
 
 // Uploads a file to all hosts of the MultipleHostsSshClient
@@ -49,24 +49,30 @@ func (msc *multipleHostsSshClient) ExecuteScriptOnSelectedHosts(filePath string,
 // remoteFilePath - the path where the file should be uploaded on the remote machines
 // The sshResponse is passed via the channels of the hosts
 // Returns an error if any has occured
-func (msc *multipleHostsSshClient) UploadFileToAllHosts(localFilePath string, remoteFilePath string) error {}
+func (msc *multipleHostsSshClient) UploadFileToAllHosts(localFilePath string, remoteFilePath string) error {
+	return nil
+}
 
 // Uploads a file only to selected hosts of the MultipleHostsSshClient's list
 // localFilePath - the path to the file on the local machine
 // remoteFilePath - the path where the file should be uploaded on the remote machines
-// hostIndexes - the indexes of the hosts from the client's list 
+// hostIndexes - the indexes of the hosts from the client's list
 // The sshResponse is passed via the channels of the hosts
 // Returns an error if any has occured
-func (msc *multipleHostsSshClient) UploadFileToSelectedHosts(localFilePath string, 
-      remoteFilePath string, hostIndexes ...int) error {}
+func (msc *multipleHostsSshClient) UploadFileToSelectedHosts(localFilePath string,
+	remoteFilePath string, hostIndexes ...int) error {
+	return nil
+}
 
 // Downloads files from all hosts of the MultipleHostsSshClient's list
 // remoteFilePath - the path of the file to be downloaded
 // localFilesPath - the path where the files will be saved
 // They will be suffixed with the index of the host they are downloaded from
 // Returns an error if one occurs.
-func (msc *multipleHostsSshClient) DownloadFileFromAllHosts(remoteFilePath string, 
-      localFilesPath string) error {}
+func (msc *multipleHostsSshClient) DownloadFileFromAllHosts(remoteFilePath string,
+	localFilesPath string) error {
+	return nil
+}
 
 // Downloads files only from selected hosts of the MultipleHostsSshClient's list
 // remoteFilePath - the path of the file to be downloaded
@@ -74,8 +80,10 @@ func (msc *multipleHostsSshClient) DownloadFileFromAllHosts(remoteFilePath strin
 // hostIndexes - the indexes of the hosts from the client's list
 // They will be suffixed with the index of the host they are downloaded from
 // Returns an error if one occurs.
-func (msc *multipleHostsSshClient) DownloadFileFromSelectedHosts(remoteFilePath string, 
-      localFilePath string, renamingFunction(fileName string, host *Host) string, hostIndexes ...int) error {}
+func (msc *multipleHostsSshClient) DownloadFileFromSelectedHosts(remoteFilePath string,
+	localFilePath string, renamingFunction func(fileName string, host *Host) string, hostIndexes ...int) error {
+	return nil
+}
 
 // Executes an function on a remote text file on all hosts.
 // Can be used as an alternative of executing sed or awk on the remote machine.
@@ -83,15 +91,19 @@ func (msc *multipleHostsSshClient) DownloadFileFromSelectedHosts(remoteFilePath 
 // alterContentsFunction - the function to be executed, the contents of the file as string will be
 // passed to it and it should return the modified contents.
 // Returns an error if one occurs
-func (msc *multipleHostsSshClient) ExecuteOnFileOnAllHosts(filePath string, 
-      alterContentsFunction func(fileContent string) string) error {}
+func (msc *multipleHostsSshClient) ExecuteOnFileOnAllHosts(filePath string,
+	alterContentsFunction func(fileContent string) string) error {
+	return nil
+}
 
 // Executes an function on a remote text file on all hosts.
 // Can be used as an alternative of executing sed or awk on the remote machine.
 // filePath - the path of the file on the remote machines
 // alterContentsFunction - the function to be executed, the contents of the file as string will be
 // passed to it and it should return the modified contents.
-// hostIndexes - the indexes of the hosts from the client's list 
+// hostIndexes - the indexes of the hosts from the client's list
 // Returns an error if one occurs.
-func (msc *multipleHostsSshClient) ExecuteOnFileOnSelectedHosts(filePath string, 
-      alterContentsFunction func(fileContent string) string, hostIndexes ...int) error {}
+func (msc *multipleHostsSshClient) ExecuteOnFileOnSelectedHosts(filePath string,
+	alterContentsFunction func(fileContent string) string, hostIndexes ...int) error {
+	return nil
+}
