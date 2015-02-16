@@ -18,10 +18,10 @@ const (
 )
 
 const (
-	SCP_PUSH_BEGIN_FOLDER     = "D"
-	SCP_PUSH_BEGIN_END_FOLDER = " 0"
-	SCP_PUSH_END_FOLDER       = "E"
-	SCP_PUSH_END              = "\x00"
+	SCP_PUSH_BEGIN_FILE   = "C0644"
+	SCP_PUSH_BEGIN_FOLDER = "D0755 0"
+	SCP_PUSH_END_FOLDER   = "E"
+	SCP_PUSH_END          = "\x00"
 )
 
 type sshClient struct {
@@ -186,15 +186,7 @@ func (s *sshClient) uploadFile(localPath string, remotePath string) (*SshRespons
 	go func() {
 		inPipe, _ := session.StdinPipe()
 		defer inPipe.Close()
-
-		fileSrc, _ := os.Open(localPath)
-
-		//Get file size
-		srcStat, _ := fileSrc.Stat()
-
-		fmt.Fprintln(inPipe, "C0644", srcStat.Size(), filepath.Base(remotePath))
-		io.Copy(inPipe, fileSrc)
-		fmt.Fprint(inPipe, "\x00")
+		writeFileInPipe(inPipe, localPath, filepath.Base(remotePath))
 	}()
 
 	if err := session.Run("/usr/bin/scp -qvrt " + filepath.Dir(remotePath)); err != nil {
@@ -203,14 +195,53 @@ func (s *sshClient) uploadFile(localPath string, remotePath string) (*SshRespons
 	return response, nil
 }
 
-func getPermissions(f *os.File) (perm string) {
-	fileStat, _ := f.Stat()
-	mod := fileStat.Mode()
-	return fmt.Sprintf("%#o", uint32(mod))
+func (s *sshClient) uploadFolder(localPath string, remotePath string) (*SshResponse, error) {
+	session, sessionErr := s.newSession()
+	if sessionErr != nil {
+		return nil, sessionErr
+	}
+	defer session.Close()
+	response := new(SshResponse)
+	session.Stdout = &response.StdOut
+	session.Stderr = &response.StdErr
+	response.HostAddress = s.hostAddress
+
+	go func() {
+		inPipe, _ := session.StdinPipe()
+		//inPipe := os.Stdout
+		defer inPipe.Close()
+		fmt.Fprintln(inPipe, SCP_PUSH_BEGIN_FOLDER, filepath.Base(remotePath))
+		writeDirectoryContents(inPipe, localPath)
+		fmt.Fprintln(inPipe, SCP_PUSH_END_FOLDER)
+	}()
+
+	if err := session.Run("/usr/bin/scp -qvrt " + filepath.Dir(remotePath)); err != nil {
+		return response, NewSshConnectionError("Error while uploading: " + err.Error())
+	}
+	return response, nil
 }
 
-func (s *sshClient) uploadFolder(localPath string, remotePath string) (*SshResponse, error) {
-	return nil, nil
+func writeDirectoryContents(inPipe io.WriteCloser, dir string) {
+	fi, _ := ioutil.ReadDir(dir)
+	for _, f := range fi {
+		if f.IsDir() {
+			fmt.Fprintln(inPipe, SCP_PUSH_BEGIN_FOLDER, f.Name())
+			writeDirectoryContents(inPipe, dir+"/"+f.Name())
+			fmt.Fprintln(inPipe, SCP_PUSH_END_FOLDER)
+		} else {
+			writeFileInPipe(inPipe, dir+"/"+f.Name(), f.Name())
+		}
+	}
+}
+
+func writeFileInPipe(inPipe io.WriteCloser, src string, remoteName string) {
+	fileSrc, _ := os.Open(src)
+	//Get file size
+	srcStat, _ := fileSrc.Stat()
+	// Print the file content
+	fmt.Fprintln(inPipe, SCP_PUSH_BEGIN_FILE, srcStat.Size(), remoteName)
+	io.Copy(inPipe, fileSrc)
+	fmt.Fprint(inPipe, SCP_PUSH_END)
 }
 
 func (s *sshClient) downloadFile(localPath string, remotePath string) (*SshResponse, error) {
