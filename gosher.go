@@ -118,10 +118,7 @@ func (s *sshClient) ExecuteCommand(command string) (*SshResponse, error) {
 		return nil, sessionErr
 	}
 	defer session.Close()
-	response := new(SshResponse)
-	session.Stdout = &response.StdOut
-	session.Stderr = &response.StdErr
-	response.HostAddress = s.hostAddress
+	response := NewSshResponse(s.hostAddress, session.Stdout, session.Stderr)
 	if err := session.Run(command); err != nil {
 		errorMessage := "There was an error while executing the command: " +
 			err.Error()
@@ -131,6 +128,7 @@ func (s *sshClient) ExecuteCommand(command string) (*SshResponse, error) {
 }
 
 // Executes a shell script file on the remote machine.
+// It is ran in the home folder of the remote user.
 // scriptPath - the path to the script on the local machine
 // Returns an SshResponse and an error if any has occured
 func (s *sshClient) ExecuteScript(scriptPath string) (*SshResponse, error) {
@@ -178,10 +176,7 @@ func (s *sshClient) uploadFile(localPath string, remotePath string) (*SshRespons
 		return nil, sessionErr
 	}
 	defer session.Close()
-	response := new(SshResponse)
-	session.Stdout = &response.StdOut
-	session.Stderr = &response.StdErr
-	response.HostAddress = s.hostAddress
+	response := NewSshResponse(s.hostAddress, session.Stdout, session.Stderr)
 
 	go func() {
 		inPipe, _ := session.StdinPipe()
@@ -201,14 +196,10 @@ func (s *sshClient) uploadFolder(localPath string, remotePath string) (*SshRespo
 		return nil, sessionErr
 	}
 	defer session.Close()
-	response := new(SshResponse)
-	session.Stdout = &response.StdOut
-	session.Stderr = &response.StdErr
-	response.HostAddress = s.hostAddress
+	response := NewSshResponse(s.hostAddress, session.Stdout, session.Stderr)
 
 	go func() {
 		inPipe, _ := session.StdinPipe()
-		//inPipe := os.Stdout
 		defer inPipe.Close()
 		fmt.Fprintln(inPipe, SCP_PUSH_BEGIN_FOLDER, filepath.Base(remotePath))
 		writeDirectoryContents(inPipe, localPath)
