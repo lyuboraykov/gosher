@@ -4,12 +4,16 @@
 package gosher
 
 import (
+	"bufio"
+	"errors"
 	"fmt"
 	"golang.org/x/crypto/ssh"
 	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 )
 
 const (
@@ -25,7 +29,7 @@ const (
 )
 
 type sshClient struct {
-	hostAddress         string
+	address             string
 	clientConfiguration ssh.ClientConfig
 	Port                int
 }
@@ -34,19 +38,19 @@ type sshClient struct {
 // This client is meant for synchronous usage with a single host.
 // The client uses Port 22 by default but can be changed,
 // by setting the Port field.
-// hostAddress - the hostname or ip of the remote machine
+// address - the hostname or ip of the remote machine
 // user - the username for the machine
 // authenticationType - the type of authentication used, can be PASSWORD_AUTH or KEY_AUTH
 // authentication - this is the password or the path to the path to the key accorrding to the authenticationType
-func NewSshClient(hostAddress string, user string, authenticationType int, authentication string) (*sshClient, error) {
+func NewSshClient(address string, user string, authenticationType int, authentication string) (*sshClient, error) {
 	if authenticationType == PASSWORD_AUTH {
-		return newPasswordAuthenticatedClient(hostAddress, user, authentication), nil
+		return newPasswordAuthenticatedClient(address, user, authentication), nil
 	}
-	keyAuthenticatedClient, err := newKeyAuthenticatedClient(hostAddress, user, authentication)
+	keyAuthenticatedClient, err := newKeyAuthenticatedClient(address, user, authentication)
 	return keyAuthenticatedClient, err
 }
 
-func newPasswordAuthenticatedClient(hostAddress string, user string, password string) *sshClient {
+func newPasswordAuthenticatedClient(address string, user string, password string) *sshClient {
 	configuration := &ssh.ClientConfig{
 		User: user,
 		Auth: []ssh.AuthMethod{
@@ -54,14 +58,14 @@ func newPasswordAuthenticatedClient(hostAddress string, user string, password st
 		},
 	}
 	client := &sshClient{
-		hostAddress:         hostAddress,
+		address:             address,
 		clientConfiguration: *configuration,
 		Port:                22,
 	}
 	return client
 }
 
-func newKeyAuthenticatedClient(hostAddress string, user string, keyPath string) (*sshClient, error) {
+func newKeyAuthenticatedClient(address string, user string, keyPath string) (*sshClient, error) {
 	key, err := getKeyFromFile(keyPath)
 	if err != nil {
 		return nil, err
@@ -73,7 +77,7 @@ func newKeyAuthenticatedClient(hostAddress string, user string, keyPath string) 
 		},
 	}
 	client := &sshClient{
-		hostAddress:         hostAddress,
+		address:             address,
 		clientConfiguration: *configuration,
 		Port:                22,
 	}
@@ -93,7 +97,7 @@ func getKeyFromFile(keyPath string) (ssh.Signer, error) {
 }
 
 func (s *sshClient) newSession() (*ssh.Session, error) {
-	hostAndPort := fmt.Sprintf("%s:%d", s.hostAddress, s.Port)
+	hostAndPort := fmt.Sprintf("%s:%d", s.address, s.Port)
 	client, clientErr := ssh.Dial("tcp", hostAndPort, &s.clientConfiguration)
 	if clientErr != nil {
 		errorMessage := "There was an error while creating a client: " +
@@ -118,7 +122,7 @@ func (s *sshClient) ExecuteCommand(command string) (*SshResponse, error) {
 		return nil, sessionErr
 	}
 	defer session.Close()
-	response := NewSshResponse(s.hostAddress, session.Stdout, session.Stderr)
+	response := NewSshResponse(s.address, session.Stdout, session.Stderr)
 	if err := session.Run(command); err != nil {
 		errorMessage := "There was an error while executing the command: " +
 			err.Error()
@@ -152,10 +156,12 @@ func (s *sshClient) ExecuteOnFile(filePath string, alterContentsFunction func(fi
 // isRecursive - whether we are working with a folder or with a file
 // Returns an SshResponse and an error if any has occured.
 func (s *sshClient) Download(remotePath string, localPath string, isRecursive bool) (*SshResponse, error) {
-	if isRecursive {
-		return s.downloadFolder(localPath, remotePath)
+	session, sessionErr := s.newSession()
+	if sessionErr != nil {
+		return nil, sessionErr
 	}
-	return s.downloadFile(localPath, remotePath)
+	defer session.Close()
+	return s.download(remotePath, localPath, session)
 }
 
 // Uploads file to the remote machine.
@@ -176,7 +182,7 @@ func (s *sshClient) uploadFile(localPath string, remotePath string) (*SshRespons
 		return nil, sessionErr
 	}
 	defer session.Close()
-	response := NewSshResponse(s.hostAddress, session.Stdout, session.Stderr)
+	response := NewSshResponse(s.address, session.Stdout, session.Stderr)
 
 	go func() {
 		inPipe, _ := session.StdinPipe()
@@ -196,7 +202,7 @@ func (s *sshClient) uploadFolder(localPath string, remotePath string) (*SshRespo
 		return nil, sessionErr
 	}
 	defer session.Close()
-	response := NewSshResponse(s.hostAddress, session.Stdout, session.Stderr)
+	response := NewSshResponse(s.address, session.Stdout, session.Stderr)
 
 	go func() {
 		inPipe, _ := session.StdinPipe()
@@ -235,10 +241,218 @@ func writeFileInPipe(inPipe io.WriteCloser, src string, remoteName string) {
 	fmt.Fprint(inPipe, SCP_PUSH_END)
 }
 
-func (s *sshClient) downloadFile(localPath string, remotePath string) (*SshResponse, error) {
-	return nil, nil
+func (s *sshClient) download(remotePath string, localPath string, session *ssh.Session) (*SshResponse, error) {
+	localPathInfo, err := os.Stat(localPath)
+	destinationDirectory := localPath
+	var useSpecifiedFilename bool
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return nil, err
+		} else {
+			//OK - create file/dir
+			useSpecifiedFilename = true
+		}
+	} else if localPathInfo.IsDir() {
+		//ok - use name of remotePath
+		//localPath = filepath.Join(localPath, filepath.Base(remotePath))
+		destinationDirectory = localPath
+		useSpecifiedFilename = false
+	} else {
+		destinationDirectory = filepath.Dir(localPath)
+		useSpecifiedFilename = true
+	}
+	//from-scp
+	response := NewSshResponse(s.address, session.Stdout, session.Stderr)
+
+	if err != nil {
+		return response, err
+	}
+	defer session.Close()
+	ce := make(chan error)
+	go func() {
+		cw, err := session.StdinPipe()
+		if err != nil {
+			ce <- err
+			return
+		}
+		defer cw.Close()
+		r, err := session.StdoutPipe()
+		if err != nil {
+			ce <- err
+			return
+		}
+		err = sendByte(cw, 0)
+		if err != nil {
+			ce <- err
+			return
+		}
+		//defer r.Close()
+		//use a scanner for processing individual commands, but not files themselves
+		scanner := bufio.NewScanner(r)
+		more := true
+		first := true
+		for more {
+			cmdArr := make([]byte, 1)
+			n, err := r.Read(cmdArr)
+			if err != nil {
+				if err == io.EOF {
+					//no problem.
+				} else {
+					ce <- err
+				}
+				return
+			}
+			if n < 1 {
+				ce <- errors.New("Error reading next byte from standard input")
+				return
+			}
+			cmd := cmdArr[0]
+			switch cmd {
+			case 0x0:
+				//continue
+			case 'E':
+				//E command: go back out of dir
+				destinationDirectory = filepath.Dir(destinationDirectory)
+				err = sendByte(cw, 0)
+				if err != nil {
+					ce <- err
+					return
+				}
+			case 0xA:
+				//0xA command: end?
+				err = sendByte(cw, 0)
+				if err != nil {
+					ce <- err
+					return
+				}
+
+				return
+			default:
+				scanner.Scan()
+				err = scanner.Err()
+				if err != nil {
+					if err == io.EOF {
+						//no problem.
+					} else {
+						ce <- err
+					}
+					return
+				}
+				//first line
+				cmdFull := scanner.Text()
+				//remainder, split by spaces
+				parts := strings.SplitN(cmdFull, " ", 3)
+
+				switch cmd {
+				case 0x1:
+					ce <- errors.New(cmdFull[1:])
+					return
+				case 'D', 'C':
+					mode, err := strconv.ParseInt(parts[0], 8, 32)
+					if err != nil {
+						ce <- err
+						return
+					}
+					sizeUint, err := strconv.ParseUint(parts[1], 10, 64)
+					size := int64(sizeUint)
+					if err != nil {
+						ce <- err
+						return
+					}
+					rcvFilename := parts[2]
+					var filename string
+					//use the specified filename from the destination (only for top-level item)
+					if useSpecifiedFilename && first {
+						filename = filepath.Base(localPath)
+					} else {
+						filename = rcvFilename
+					}
+					err = sendByte(cw, 0)
+					if err != nil {
+						ce <- err
+						return
+					}
+					if cmd == 'C' {
+						//C command - file
+						thisLocalPath := filepath.Join(destinationDirectory, filename)
+						tot := int64(0)
+
+						fw, err := os.Create(thisLocalPath)
+						if err != nil {
+							ce <- err
+							return
+						}
+						defer fw.Close()
+
+						//buffered by 4096 bytes
+						bufferSize := int64(4096)
+						for tot < size {
+							if bufferSize > size-tot {
+								bufferSize = size - tot
+							}
+							b := make([]byte, bufferSize)
+							n, err = r.Read(b)
+							if err != nil {
+								ce <- err
+								return
+							}
+							tot += int64(n)
+							//write to file
+							_, err = fw.Write(b[:n])
+							if err != nil {
+								ce <- err
+								return
+							}
+						}
+						//close file writer & check error
+						err = fw.Close()
+						if err != nil {
+							ce <- err
+							return
+						}
+						//get next byte from channel reader
+						nb := make([]byte, 1)
+						_, err = r.Read(nb)
+						if err != nil {
+							ce <- err
+							return
+						}
+						//TODO check value received in nb
+						//send null-byte back
+						_, err = cw.Write([]byte{0})
+						if err != nil {
+							ce <- err
+							return
+						}
+					} else {
+						//D command (directory)
+						thisDstFile := filepath.Join(destinationDirectory, filename)
+						fileMode := os.FileMode(uint32(mode))
+						err = os.MkdirAll(thisDstFile, fileMode)
+						if err != nil {
+							ce <- err
+							return
+						}
+						destinationDirectory = thisDstFile
+					}
+				default:
+					return
+				}
+			}
+			first = false
+		}
+		err = cw.Close()
+		if err != nil {
+			ce <- err
+			return
+		}
+	}()
+	remoteOpts := "-fr"
+	err = session.Run("/usr/bin/scp " + remoteOpts + " " + remotePath)
+	return response, err
 }
 
-func (s *sshClient) downloadFolder(localPath string, remotePath string) (*SshResponse, error) {
-	return nil, nil
+func sendByte(w io.Writer, val byte) error {
+	_, err := w.Write([]byte{val})
+	return err
 }
