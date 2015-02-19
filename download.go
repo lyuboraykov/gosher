@@ -3,7 +3,6 @@ package gosher
 import (
 	"bufio"
 	"errors"
-	"golang.org/x/crypto/ssh"
 	"io"
 	"os"
 	"path/filepath"
@@ -11,7 +10,7 @@ import (
 	"strings"
 )
 
-func (s *sshClient) download(remotePath string, localPath string, session *ssh.Session) (*SshResponse, error) {
+func (s *SshClient) download(remotePath string, localPath string) (*SshResponse, error) {
 	localPathInfo, err := os.Stat(localPath)
 	destinationDirectory := localPath
 	var useSpecifiedFilename bool
@@ -32,21 +31,21 @@ func (s *sshClient) download(remotePath string, localPath string, session *ssh.S
 		useSpecifiedFilename = true
 	}
 	//from-scp
-	response := NewSshResponse(s.address, session.Stdout, session.Stderr)
+	response := NewSshResponse(s.address, s.session.Stdout, s.session.Stderr)
 
 	if err != nil {
 		return response, err
 	}
-	defer session.Close()
+	defer s.session.Close()
 	ce := make(chan error)
 	go func() {
-		cw, err := session.StdinPipe()
+		cw, err := s.session.StdinPipe()
 		if err != nil {
 			ce <- err
 			return
 		}
 		defer cw.Close()
-		r, err := session.StdoutPipe()
+		r, err := s.session.StdoutPipe()
 		if err != nil {
 			ce <- err
 			return
@@ -218,7 +217,7 @@ func (s *sshClient) download(remotePath string, localPath string, session *ssh.S
 		}
 	}()
 	remoteOpts := "-fr"
-	err = session.Run("/usr/bin/scp " + remoteOpts + " " + remotePath)
+	err = s.session.Run("/usr/bin/scp " + remoteOpts + " " + remotePath)
 	return response, err
 }
 

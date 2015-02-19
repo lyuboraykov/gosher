@@ -8,43 +8,31 @@ import (
 	"path/filepath"
 )
 
-func (s *sshClient) uploadFile(localPath string, remotePath string) (*SshResponse, error) {
-	session, sessionErr := s.newSession()
-	if sessionErr != nil {
-		return nil, sessionErr
-	}
-	defer session.Close()
-	response := NewSshResponse(s.address, session.Stdout, session.Stderr)
-
+func (s *SshClient) uploadFile(localPath string, remotePath string) (*SshResponse, error) {
+	response := NewSshResponse(s.address, s.session.Stdout, s.session.Stderr)
 	go func() {
-		inPipe, _ := session.StdinPipe()
+		inPipe, _ := s.session.StdinPipe()
 		defer inPipe.Close()
 		writeFileInPipe(inPipe, localPath, filepath.Base(remotePath))
 	}()
 
-	if err := session.Run("/usr/bin/scp -qvrt " + filepath.Dir(remotePath)); err != nil {
+	if err := s.session.Run("/usr/bin/scp -qvrt " + filepath.Dir(remotePath)); err != nil {
 		return response, NewSshConnectionError("There was an error while uploading: " + err.Error())
 	}
 	return response, nil
 }
 
-func (s *sshClient) uploadFolder(localPath string, remotePath string) (*SshResponse, error) {
-	session, sessionErr := s.newSession()
-	if sessionErr != nil {
-		return nil, sessionErr
-	}
-	defer session.Close()
-	response := NewSshResponse(s.address, session.Stdout, session.Stderr)
-
+func (s *SshClient) uploadFolder(localPath string, remotePath string) (*SshResponse, error) {
+	response := NewSshResponse(s.address, s.session.Stdout, s.session.Stderr)
 	go func() {
-		inPipe, _ := session.StdinPipe()
+		inPipe, _ := s.session.StdinPipe()
 		defer inPipe.Close()
 		fmt.Fprintln(inPipe, SCP_PUSH_BEGIN_FOLDER, filepath.Base(remotePath))
 		writeDirectoryContents(inPipe, localPath)
 		fmt.Fprintln(inPipe, SCP_PUSH_END_FOLDER)
 	}()
 
-	if err := session.Run("/usr/bin/scp -qvrt " + filepath.Dir(remotePath)); err != nil {
+	if err := s.session.Run("/usr/bin/scp -qvrt " + filepath.Dir(remotePath)); err != nil {
 		return response, NewSshConnectionError("Error while uploading: " + err.Error())
 	}
 	return response, nil

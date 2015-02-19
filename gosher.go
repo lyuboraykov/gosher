@@ -8,6 +8,7 @@ import (
 	"golang.org/x/crypto/ssh"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 )
 
 const (
@@ -22,21 +23,26 @@ const (
 	SCP_PUSH_END          = "\x00"
 )
 
-type sshClient struct {
+// Port - 22 by default
+// StickySession - false by default, if true
+// sessions won't be closed automatically and one would have to use
+// CloseSession()
+type SshClient struct {
+	Port                int
+	StickySession       bool
 	address             string
 	clientConfiguration ssh.ClientConfig
-	Port                int
+	session             ssh.Session
+	isSessionOpened     bool
 }
 
 // Initializes the SshClient.
 // This client is meant for synchronous usage with a single host.
-// The client uses Port 22 by default but can be changed,
-// by setting the Port field.
 // address - the hostname or ip of the remote machine
 // user - the username for the machine
 // authenticationType - the type of authentication used, can be PASSWORD_AUTH or KEY_AUTH
 // authentication - this is the password or the path to the path to the key accorrding to the authenticationType
-func NewSshClient(address string, user string, authenticationType int, authentication string) (*sshClient, error) {
+func NewSshClient(address string, user string, authenticationType int, authentication string) (*SshClient, error) {
 	if authenticationType == PASSWORD_AUTH {
 		return newPasswordAuthenticatedClient(address, user, authentication), nil
 	}
@@ -44,22 +50,24 @@ func NewSshClient(address string, user string, authenticationType int, authentic
 	return keyAuthenticatedClient, err
 }
 
-func newPasswordAuthenticatedClient(address string, user string, password string) *sshClient {
+func newPasswordAuthenticatedClient(address string, user string, password string) *SshClient {
 	configuration := &ssh.ClientConfig{
 		User: user,
 		Auth: []ssh.AuthMethod{
 			ssh.Password(password),
 		},
 	}
-	client := &sshClient{
+	client := &SshClient{
 		address:             address,
 		clientConfiguration: *configuration,
 		Port:                22,
+		StickySession:       false,
+		isSessionOpened:     false,
 	}
 	return client
 }
 
-func newKeyAuthenticatedClient(address string, user string, keyPath string) (*sshClient, error) {
+func newKeyAuthenticatedClient(address string, user string, keyPath string) (*SshClient, error) {
 	key, err := getKeyFromFile(keyPath)
 	if err != nil {
 		return nil, err
@@ -70,10 +78,12 @@ func newKeyAuthenticatedClient(address string, user string, keyPath string) (*ss
 			ssh.PublicKeys(key),
 		},
 	}
-	client := &sshClient{
+	client := &SshClient{
 		address:             address,
 		clientConfiguration: *configuration,
 		Port:                22,
+		StickySession:       false,
+		isSessionOpened:     false,
 	}
 	return client, err
 }
@@ -90,34 +100,40 @@ func getKeyFromFile(keyPath string) (ssh.Signer, error) {
 	return key, err
 }
 
-func (s *sshClient) newSession() (*ssh.Session, error) {
-	hostAndPort := fmt.Sprintf("%s:%d", s.address, s.Port)
-	client, clientErr := ssh.Dial("tcp", hostAndPort, &s.clientConfiguration)
-	if clientErr != nil {
-		errorMessage := "There was an error while creating a client: " +
-			clientErr.Error()
-		return nil, NewSshConnectionError(errorMessage)
+func (s *SshClient) newSession() error {
+	if !s.isSessionOpened {
+		hostAndPort := fmt.Sprintf("%s:%d", s.address, s.Port)
+		client, clientErr := ssh.Dial("tcp", hostAndPort, &s.clientConfiguration)
+		if clientErr != nil {
+			errorMessage := "There was an error while creating a client: " +
+				clientErr.Error()
+			return NewSshConnectionError(errorMessage)
+		}
+		session, sessionErr := client.NewSession()
+		if sessionErr != nil {
+			errorMessage := "There was an error while establishing a session: " +
+				sessionErr.Error()
+			return NewSshConnectionError(errorMessage)
+		}
+		s.isSessionOpened = true
+		s.session = *session
 	}
-	session, sessionErr := client.NewSession()
-	if sessionErr != nil {
-		errorMessage := "There was an error while establishing a session: " +
-			sessionErr.Error()
-		return nil, NewSshConnectionError(errorMessage)
-	}
-	return session, nil
+	return nil
 }
 
 // Executes shell command on the remote machine synchronously.
 // command - the shell command to be executed on the machine.
 // Returns an SshResponse and an error if any has occured.
-func (s *sshClient) ExecuteCommand(command string) (*SshResponse, error) {
-	session, sessionErr := s.newSession()
+func (s *SshClient) ExecuteCommand(command string) (*SshResponse, error) {
+	sessionErr := s.newSession()
 	if sessionErr != nil {
 		return nil, sessionErr
 	}
-	defer session.Close()
-	response := NewSshResponse(s.address, session.Stdout, session.Stderr)
-	if err := session.Run(command); err != nil {
+	if !s.StickySession {
+		defer s.CloseSession()
+	}
+	response := NewSshResponse(s.address, s.session.Stdout, s.session.Stderr)
+	if err := s.session.Run(command); err != nil {
 		errorMessage := "There was an error while executing the command: " +
 			err.Error()
 		return response, NewSshConnectionError(errorMessage)
@@ -126,11 +142,28 @@ func (s *sshClient) ExecuteCommand(command string) (*SshResponse, error) {
 }
 
 // Executes a shell script file on the remote machine.
-// It is ran in the home folder of the remote user.
+// It is copied in the tmp folder and ran in a single session.
+// chmod +x is applied before running.
 // scriptPath - the path to the script on the local machine
 // Returns an SshResponse and an error if any has occured
-func (s *sshClient) ExecuteScript(scriptPath string) (*SshResponse, error) {
-	return nil, nil
+func (s *SshClient) ExecuteScript(scriptPath string) (*SshResponse, error) {
+	sessionErr := s.newSession()
+	if sessionErr != nil {
+		return nil, sessionErr
+	}
+	if !s.StickySession {
+		defer s.CloseSession()
+	}
+	response := NewSshResponse(s.address, s.session.Stdout, s.session.Stderr)
+	remotePath := fmt.Sprintf("/tmp/%s", filepath.Base(scriptPath))
+	s.uploadFile(scriptPath, remotePath)
+	executeCommand := fmt.Sprintf("chmod +x %s ; %s", remotePath, remotePath)
+	if err := s.session.Run(executeCommand); err != nil {
+		errorMessage := "There was an error while executing the script: " +
+			err.Error()
+		return response, NewSshConnectionError(errorMessage)
+	}
+	return response, nil
 }
 
 // Executes an function on a remote text file.
@@ -139,7 +172,7 @@ func (s *sshClient) ExecuteScript(scriptPath string) (*SshResponse, error) {
 // alterContentsFunction - the function to be executed, the contents of the file as string will be
 // passed to it and it should return the modified contents.
 // Returns SshResponse and an error if any has occured.
-func (s *sshClient) ExecuteOnFile(filePath string, alterContentsFunction func(fileContent string) string) (*SshResponse, error) {
+func (s *SshClient) ExecuteOnFile(filePath string, alterContentsFunction func(fileContent string) string) (*SshResponse, error) {
 	return nil, nil
 }
 
@@ -148,13 +181,15 @@ func (s *sshClient) ExecuteOnFile(filePath string, alterContentsFunction func(fi
 // remotePath - the path to the file on the remote machine
 // localPath - the path on the local machine where the file will be downloaded
 // Returns an SshResponse and an error if any has occured.
-func (s *sshClient) Download(remotePath string, localPath string) (*SshResponse, error) {
-	session, sessionErr := s.newSession()
+func (s *SshClient) Download(remotePath string, localPath string) (*SshResponse, error) {
+	sessionErr := s.newSession()
 	if sessionErr != nil {
 		return nil, sessionErr
 	}
-	defer session.Close()
-	return s.download(remotePath, localPath, session)
+	if !s.StickySession {
+		defer s.CloseSession()
+	}
+	return s.download(remotePath, localPath)
 }
 
 // Uploads file to the remote machine.
@@ -162,14 +197,28 @@ func (s *sshClient) Download(remotePath string, localPath string) (*SshResponse,
 // remotePath - the path on the remote machine where the file will be uploaded
 // isRecursive - whether we are working with a folder or with a file
 // Returns an SshResponse and an error if any has occured.
-func (s *sshClient) Upload(localPath string, remotePath string) (*SshResponse, error) {
+func (s *SshClient) Upload(localPath string, remotePath string) (*SshResponse, error) {
 	localPathInfo, err := os.Stat(localPath)
 	if err != nil {
 		return nil, err
+	}
+	sessionErr := s.newSession()
+	if sessionErr != nil {
+		return nil, sessionErr
+	}
+	if !s.StickySession {
+		defer s.CloseSession()
 	}
 	if localPathInfo.IsDir() {
 		return s.uploadFolder(localPath, remotePath)
 	} else {
 		return s.uploadFile(localPath, remotePath)
 	}
+}
+
+// Closes the session, use only with StickySession set to true
+func (s *SshClient) CloseSession() error {
+	s.isSessionOpened = false
+	s.session.Close()
+	return nil
 }
