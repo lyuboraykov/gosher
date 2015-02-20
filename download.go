@@ -23,7 +23,6 @@ func (s *SshClient) download(remotePath string, localPath string) (*SshResponse,
 		}
 	} else if localPathInfo.IsDir() {
 		//ok - use name of remotePath
-		//localPath = filepath.Join(localPath, filepath.Base(remotePath))
 		destinationDirectory = localPath
 		useSpecifiedFilename = false
 	} else {
@@ -37,188 +36,197 @@ func (s *SshClient) download(remotePath string, localPath string) (*SshResponse,
 		return response, err
 	}
 	defer s.session.Close()
-	ce := make(chan error)
-	go func() {
-		cw, err := s.session.StdinPipe()
-		if err != nil {
-			ce <- err
-			return
-		}
-		defer cw.Close()
-		r, err := s.session.StdoutPipe()
-		if err != nil {
-			ce <- err
-			return
-		}
-		err = sendByte(cw, 0)
-		if err != nil {
-			ce <- err
-			return
-		}
-		//defer r.Close()
-		//use a scanner for processing individual commands, but not files themselves
-		scanner := bufio.NewScanner(r)
-		more := true
-		first := true
-		for more {
-			cmdArr := make([]byte, 1)
-			n, err := r.Read(cmdArr)
-			if err != nil {
-				if err == io.EOF {
-					//no problem.
-				} else {
-					ce <- err
-				}
-				return
-			}
-			if n < 1 {
-				ce <- errors.New("Error reading next byte from standard input")
-				return
-			}
-			cmd := cmdArr[0]
-			switch cmd {
-			case 0x0:
-				//continue
-			case 'E':
-				//E command: go back out of dir
-				destinationDirectory = filepath.Dir(destinationDirectory)
-				err = sendByte(cw, 0)
-				if err != nil {
-					ce <- err
-					return
-				}
-			case 0xA:
-				//0xA command: end?
-				err = sendByte(cw, 0)
-				if err != nil {
-					ce <- err
-					return
-				}
-
-				return
-			default:
-				scanner.Scan()
-				err = scanner.Err()
-				if err != nil {
-					if err == io.EOF {
-						//no problem.
-					} else {
-						ce <- err
-					}
-					return
-				}
-				//first line
-				cmdFull := scanner.Text()
-				//remainder, split by spaces
-				parts := strings.SplitN(cmdFull, " ", 3)
-
-				switch cmd {
-				case 0x1:
-					ce <- errors.New(cmdFull[1:])
-					return
-				case 'D', 'C':
-					mode, err := strconv.ParseInt(parts[0], 8, 32)
-					if err != nil {
-						ce <- err
-						return
-					}
-					sizeUint, err := strconv.ParseUint(parts[1], 10, 64)
-					size := int64(sizeUint)
-					if err != nil {
-						ce <- err
-						return
-					}
-					rcvFilename := parts[2]
-					var filename string
-					//use the specified filename from the destination (only for top-level item)
-					if useSpecifiedFilename && first {
-						filename = filepath.Base(localPath)
-					} else {
-						filename = rcvFilename
-					}
-					err = sendByte(cw, 0)
-					if err != nil {
-						ce <- err
-						return
-					}
-					if cmd == 'C' {
-						//C command - file
-						thisLocalPath := filepath.Join(destinationDirectory, filename)
-						tot := int64(0)
-
-						fw, err := os.Create(thisLocalPath)
-						if err != nil {
-							ce <- err
-							return
-						}
-						defer fw.Close()
-
-						//buffered by 4096 bytes
-						bufferSize := int64(4096)
-						for tot < size {
-							if bufferSize > size-tot {
-								bufferSize = size - tot
-							}
-							b := make([]byte, bufferSize)
-							n, err = r.Read(b)
-							if err != nil {
-								ce <- err
-								return
-							}
-							tot += int64(n)
-							//write to file
-							_, err = fw.Write(b[:n])
-							if err != nil {
-								ce <- err
-								return
-							}
-						}
-						//close file writer & check error
-						err = fw.Close()
-						if err != nil {
-							ce <- err
-							return
-						}
-						//get next byte from channel reader
-						nb := make([]byte, 1)
-						_, err = r.Read(nb)
-						if err != nil {
-							ce <- err
-							return
-						}
-						//TODO check value received in nb
-						//send null-byte back
-						_, err = cw.Write([]byte{0})
-						if err != nil {
-							ce <- err
-							return
-						}
-					} else {
-						//D command (directory)
-						thisDstFile := filepath.Join(destinationDirectory, filename)
-						fileMode := os.FileMode(uint32(mode))
-						err = os.MkdirAll(thisDstFile, fileMode)
-						if err != nil {
-							ce <- err
-							return
-						}
-						destinationDirectory = thisDstFile
-					}
-				default:
-					return
-				}
-			}
-			first = false
-		}
-		err = cw.Close()
-		if err != nil {
-			ce <- err
-			return
-		}
-	}()
+	errorChannel := make(chan error)
+	go s.manageDownloads(errorChannel, destinationDirectory, useSpecifiedFilename, localPath)
 	remoteOpts := "-fr"
 	err = s.session.Run("/usr/bin/scp " + remoteOpts + " " + remotePath)
 	return response, err
+}
+
+func (s *SshClient) manageDownloads(errorChannel chan error, destinationDirectory string,
+	useSpecifiedFilename bool, localPath string) {
+	inPipe, err := s.session.StdinPipe()
+	if err != nil {
+		errorChannel <- err
+		return
+	}
+	defer inPipe.Close()
+	outPipe, err := s.session.StdoutPipe()
+	if err != nil {
+		errorChannel <- err
+		return
+	}
+	err = sendByte(inPipe, 0)
+	if err != nil {
+		errorChannel <- err
+		return
+	}
+	//use a scanner for processing individual commands, but not files themselves
+	scanner := bufio.NewScanner(outPipe)
+	more := true
+	isFirstCommand := true
+	for more {
+		commandArray := make([]byte, 1)
+		commandLength, err := outPipe.Read(commandArray)
+		if err != nil {
+			if err == io.EOF {
+				//no problem.
+			} else {
+				errorChannel <- err
+			}
+			return
+		}
+		if commandLength < 1 {
+			errorChannel <- errors.New("Error reading next byte from standard input")
+			return
+		}
+		command := commandArray[0]
+		switch command {
+		case 0x0:
+			//continue
+		case 'E':
+			//E command: go back out of dir
+			destinationDirectory = filepath.Dir(destinationDirectory)
+			err = sendByte(inPipe, 0)
+			if err != nil {
+				errorChannel <- err
+				return
+			}
+		case 0xA:
+			//0xA command: end?
+			err = sendByte(inPipe, 0)
+			if err != nil {
+				errorChannel <- err
+				return
+			}
+			return
+		default:
+			scanner.Scan()
+			err = scanner.Err()
+			if err != nil {
+				if err == io.EOF {
+					// no problem.
+				} else {
+					errorChannel <- err
+				}
+				return
+			}
+			// first line
+			fullCommand := scanner.Text()
+			// remainder, split by spaces
+			splitCommands := strings.SplitN(fullCommand, " ", 3)
+
+			switch command {
+			case 0x1:
+				errorChannel <- errors.New(fullCommand[1:])
+				return
+			case 'D', 'C':
+				if err = s.manageWrites(splitCommands, inPipe, command, isFirstCommand,
+					outPipe, destinationDirectory, useSpecifiedFilename, localPath, commandLength); err != nil {
+					errorChannel <- err
+					return
+				}
+			default:
+				return
+			}
+		}
+		isFirstCommand = false
+	}
+	err = inPipe.Close()
+	if err != nil {
+		errorChannel <- err
+		return
+	}
+}
+
+func (s *SshClient) manageWrites(splitCommands []string, inPipe io.WriteCloser, command byte, isFirstCommand bool,
+	outPipe io.Reader, destinationDirectory string, useSpecifiedFilename bool, localPath string, commandLength int) error {
+	mode, err := strconv.ParseInt(splitCommands[0], 8, 32)
+	if err != nil {
+		return err
+	}
+	sizeUint, err := strconv.ParseUint(splitCommands[1], 10, 64)
+	commandSize := int64(sizeUint)
+	if err != nil {
+		return err
+	}
+	rcvFilename := splitCommands[2]
+	var filename string
+	//use the specified filename from the destination (only for top-level item)
+	if useSpecifiedFilename && isFirstCommand {
+		filename = filepath.Base(localPath)
+	} else {
+		filename = rcvFilename
+	}
+	err = sendByte(inPipe, 0)
+	if err != nil {
+		return err
+	}
+	if command == 'C' {
+		//C command - file
+		if err = s.writeFileFromPipe(destinationDirectory, filename, inPipe,
+			commandLength, commandSize, outPipe); err != nil {
+			return err
+		}
+	} else {
+		//D command (directory)
+		thisDstFile := filepath.Join(destinationDirectory, filename)
+		fileMode := os.FileMode(uint32(mode))
+		err = os.MkdirAll(thisDstFile, fileMode)
+		if err != nil {
+			return err
+		}
+		destinationDirectory = thisDstFile
+	}
+	return nil
+}
+
+func (s *SshClient) writeFileFromPipe(destinationDirectory string, filename string,
+	inPipe io.WriteCloser, commandLength int, commandSize int64, outPipe io.Reader) error {
+	thisLocalPath := filepath.Join(destinationDirectory, filename)
+	tot := int64(0)
+
+	fileWriter, err := os.Create(thisLocalPath)
+	if err != nil {
+		return err
+	}
+	defer fileWriter.Close()
+
+	//buffered by 4096 bytes
+	bufferSize := int64(4096)
+	for tot < commandSize {
+		if bufferSize > commandSize-tot {
+			bufferSize = commandSize - tot
+		}
+		b := make([]byte, bufferSize)
+		commandLength, err = outPipe.Read(b)
+		if err != nil {
+			return err
+		}
+		tot += int64(commandLength)
+		//write to file
+		_, err = fileWriter.Write(b[:commandLength])
+		if err != nil {
+			return err
+		}
+	}
+	//close file writer & check error
+	err = fileWriter.Close()
+	if err != nil {
+		return err
+	}
+	//get next byte from channel reader
+	nextByte := make([]byte, 1)
+	_, err = outPipe.Read(nextByte)
+	if err != nil {
+		return err
+	}
+	//send null-byte back
+	_, err = inPipe.Write([]byte{0})
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func sendByte(w io.Writer, val byte) error {
