@@ -124,7 +124,7 @@ func (s *SshClient) newSession() error {
 // Executes shell command on the remote machine synchronously.
 // command - the shell command to be executed on the machine.
 // Returns an SshResponse and an error if any has occured.
-func (s *SshClient) ExecuteCommand(command string) (*SshResponse, error) {
+func (s *SshClient) Run(command string) (*SshResponse, error) {
 	sessionErr := s.newSession()
 	if sessionErr != nil {
 		return nil, sessionErr
@@ -146,7 +146,7 @@ func (s *SshClient) ExecuteCommand(command string) (*SshResponse, error) {
 // chmod +x is applied before running.
 // scriptPath - the path to the script on the local machine
 // Returns an SshResponse and an error if any has occured
-func (s *SshClient) ExecuteScript(scriptPath string) (*SshResponse, error) {
+func (s *SshClient) RunScript(scriptPath string) (*SshResponse, error) {
 	sessionErr := s.newSession()
 	if sessionErr != nil {
 		return nil, sessionErr
@@ -156,7 +156,9 @@ func (s *SshClient) ExecuteScript(scriptPath string) (*SshResponse, error) {
 	}
 	response := NewSshResponse(s.address, s.session.Stdout, s.session.Stderr)
 	remotePath := fmt.Sprintf("/tmp/%s", filepath.Base(scriptPath))
-	s.uploadFile(scriptPath, remotePath)
+	if _, upErr := s.uploadFile(scriptPath, remotePath); upErr != nil {
+      return response, upErr
+   }
 	executeCommand := fmt.Sprintf("chmod +x %s ; %s", remotePath, remotePath)
 	if err := s.session.Run(executeCommand); err != nil {
 		errorMessage := "There was an error while executing the script: " +
@@ -172,8 +174,33 @@ func (s *SshClient) ExecuteScript(scriptPath string) (*SshResponse, error) {
 // alterContentsFunction - the function to be executed, the contents of the file as string will be
 // passed to it and it should return the modified contents.
 // Returns SshResponse and an error if any has occured.
-func (s *SshClient) ExecuteOnFile(filePath string, alterContentsFunction func(fileContent string) string) (*SshResponse, error) {
-	return nil, nil
+func (s *SshClient) RunOnFile(filePath string, alterContentsFunction func(fileContent string) string) (*SshResponse, error) {
+	sessionErr := s.newSession()
+   if sessionErr != nil {
+      return nil, sessionErr
+   }
+   if !s.StickySession {
+      defer s.CloseSession()
+   }
+   response := NewSshResponse(s.address, s.session.Stdout, s.session.Stderr)
+   temporaryLocalPath := fmt.Sprintf("/tmp/%s", filepath.Base(filePath))
+   if _, downloadErr := s.download(filePath, temporaryLocalPath); downloadErr != nil {
+      return nil, downloadErr
+   }
+   buf, err := ioutil.ReadFile(temporaryLocalPath)
+   if err != nil {
+      return nil, err
+   }
+   fileContent := string(buf)
+   newFileContent := alterContentsFunction(fileContent)
+   ioutil.WriteFile(temporaryLocalPath, []byte(newFileContent), os.ModeTemporary)
+   if runErr := s.session.Run("rm -f " + filePath); runErr != nil {
+      return nil, runErr
+   }
+   if _, upErr := s.uploadFile(temporaryLocalPath, filePath); upErr != nil {
+      return nil, upErr
+   }
+   return response, nil
 }
 
 // Downloads file from the remote machine.
