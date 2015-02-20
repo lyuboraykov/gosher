@@ -30,7 +30,7 @@ const (
 type SshClient struct {
 	Port                int
 	StickySession       bool
-	address             string
+	Address             string
 	clientConfiguration ssh.ClientConfig
 	session             ssh.Session
 	isSessionOpened     bool
@@ -58,7 +58,7 @@ func newPasswordAuthenticatedClient(address string, user string, password string
 		},
 	}
 	client := &SshClient{
-		address:             address,
+		Address:             address,
 		clientConfiguration: *configuration,
 		Port:                22,
 		StickySession:       false,
@@ -79,7 +79,7 @@ func newKeyAuthenticatedClient(address string, user string, keyPath string) (*Ss
 		},
 	}
 	client := &SshClient{
-		address:             address,
+		Address:             address,
 		clientConfiguration: *configuration,
 		Port:                22,
 		StickySession:       false,
@@ -157,8 +157,8 @@ func (s *SshClient) RunScript(scriptPath string) (*SshResponse, error) {
 	response := NewSshResponse(s.address, s.session.Stdout, s.session.Stderr)
 	remotePath := fmt.Sprintf("/tmp/%s", filepath.Base(scriptPath))
 	if _, upErr := s.uploadFile(scriptPath, remotePath); upErr != nil {
-      return response, upErr
-   }
+		return response, upErr
+	}
 	executeCommand := fmt.Sprintf("chmod +x %s ; %s", remotePath, remotePath)
 	if err := s.session.Run(executeCommand); err != nil {
 		errorMessage := "There was an error while executing the script: " +
@@ -176,31 +176,31 @@ func (s *SshClient) RunScript(scriptPath string) (*SshResponse, error) {
 // Returns SshResponse and an error if any has occured.
 func (s *SshClient) RunOnFile(filePath string, alterContentsFunction func(fileContent string) string) (*SshResponse, error) {
 	sessionErr := s.newSession()
-   if sessionErr != nil {
-      return nil, sessionErr
-   }
-   if !s.StickySession {
-      defer s.CloseSession()
-   }
-   response := NewSshResponse(s.address, s.session.Stdout, s.session.Stderr)
-   temporaryLocalPath := fmt.Sprintf("/tmp/%s", filepath.Base(filePath))
-   if _, downloadErr := s.download(filePath, temporaryLocalPath); downloadErr != nil {
-      return nil, downloadErr
-   }
-   buf, err := ioutil.ReadFile(temporaryLocalPath)
-   if err != nil {
-      return nil, err
-   }
-   fileContent := string(buf)
-   newFileContent := alterContentsFunction(fileContent)
-   ioutil.WriteFile(temporaryLocalPath, []byte(newFileContent), os.ModeTemporary)
-   if runErr := s.session.Run("rm -f " + filePath); runErr != nil {
-      return nil, runErr
-   }
-   if _, upErr := s.uploadFile(temporaryLocalPath, filePath); upErr != nil {
-      return nil, upErr
-   }
-   return response, nil
+	if sessionErr != nil {
+		return nil, sessionErr
+	}
+	if !s.StickySession {
+		defer s.CloseSession()
+	}
+	response := NewSshResponse(s.address, s.session.Stdout, s.session.Stderr)
+	temporaryLocalPath := fmt.Sprintf("/tmp/%s", filepath.Base(filePath))
+	if _, downloadErr := s.download(filePath, temporaryLocalPath); downloadErr != nil {
+		return nil, downloadErr
+	}
+	buf, err := ioutil.ReadFile(temporaryLocalPath)
+	if err != nil {
+		return nil, err
+	}
+	fileContent := string(buf)
+	newFileContent := alterContentsFunction(fileContent)
+	ioutil.WriteFile(temporaryLocalPath, []byte(newFileContent), os.ModeTemporary)
+	if runErr := s.session.Run("rm -f " + filePath); runErr != nil {
+		return nil, runErr
+	}
+	if _, upErr := s.uploadFile(temporaryLocalPath, filePath); upErr != nil {
+		return nil, upErr
+	}
+	return response, nil
 }
 
 // Downloads file from the remote machine.

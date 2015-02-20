@@ -2,22 +2,21 @@ package gosher
 
 // Host - remote machine definition type.
 // Used with the multipleHostsSshClient with asynchronous execution.
-// hostAddress - the address of the remote machine
-// authenticationType - PASSWORD_AUTH or KEY_AUTH
-// authentication - either the password of the machine or the path to the key on
-// the local machine, according to the authentication type
-// resultChannel - the channel via which the SshResponse of the operations will be
-// passed
+// Client - the SshClient responsible for this host
+// ResultChannel - the channel via which the SshResponse of the operations will be passed
+// ErrorChannel - the channel via which the error of the operations will be passed
 type Host struct {
-	hostAddress        string
-	authenticationType int
-	authentication     string
-	resultChannel      chan *SshResponse
-	errorChannel       chan error
+	Client        *SshClient
+	ResultChannel chan *SshResponse
+	ErrorChannel  chan error
 }
 
 // Constructor method for the Host type
-func NewHost(hostAddress string, authenticationType int, authentication string,
-	resultChannel chan *SshResponse) *Host {
-	return nil
+func NewHost(address string, user string, authenticationType int, authentication string,
+	resultChannel chan *SshResponse, errorChannel chan error) *Host {
+	host := new(Host)
+	host.Client = NewSshClient(address, user, authenticationType, authentication)
+	host.ResultChannel = resultChannel
+	host.ErrorChannel = errorChannel
+	return &host
 }
