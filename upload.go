@@ -8,8 +8,15 @@ import (
 	"path/filepath"
 )
 
+const (
+	scpPushBeginFile   = "C0644"
+	scpPushBeginFolder = "D0755 0"
+	scpPushEndFolder   = "E"
+	scpPushEnd         = "\x00"
+)
+
 func (s *SshClient) uploadFile(localPath string, remotePath string) (*SshResponse, error) {
-	response := NewSshResponse(s.address, s.session.Stdout, s.session.Stderr)
+	response := NewSshResponse(s.Address, s.session.Stdout, s.session.Stderr)
 	go func() {
 		inPipe, _ := s.session.StdinPipe()
 		defer inPipe.Close()
@@ -23,13 +30,13 @@ func (s *SshClient) uploadFile(localPath string, remotePath string) (*SshRespons
 }
 
 func (s *SshClient) uploadFolder(localPath string, remotePath string) (*SshResponse, error) {
-	response := NewSshResponse(s.address, s.session.Stdout, s.session.Stderr)
+	response := NewSshResponse(s.Address, s.session.Stdout, s.session.Stderr)
 	go func() {
 		inPipe, _ := s.session.StdinPipe()
 		defer inPipe.Close()
-		fmt.Fprintln(inPipe, SCP_PUSH_BEGIN_FOLDER, filepath.Base(remotePath))
+		fmt.Fprintln(inPipe, scpPushBeginFolder, filepath.Base(remotePath))
 		writeDirectoryContents(inPipe, localPath)
-		fmt.Fprintln(inPipe, SCP_PUSH_END_FOLDER)
+		fmt.Fprintln(inPipe, scpPushEndFolder)
 	}()
 
 	if err := s.session.Run("/usr/bin/scp -qvrt " + filepath.Dir(remotePath)); err != nil {
@@ -42,9 +49,9 @@ func writeDirectoryContents(inPipe io.WriteCloser, dir string) {
 	fi, _ := ioutil.ReadDir(dir)
 	for _, f := range fi {
 		if f.IsDir() {
-			fmt.Fprintln(inPipe, SCP_PUSH_BEGIN_FOLDER, f.Name())
+			fmt.Fprintln(inPipe, scpPushBeginFolder, f.Name())
 			writeDirectoryContents(inPipe, dir+"/"+f.Name())
-			fmt.Fprintln(inPipe, SCP_PUSH_END_FOLDER)
+			fmt.Fprintln(inPipe, scpPushEndFolder)
 		} else {
 			writeFileInPipe(inPipe, dir+"/"+f.Name(), f.Name())
 		}
@@ -56,7 +63,7 @@ func writeFileInPipe(inPipe io.WriteCloser, src string, remoteName string) {
 	//Get file size
 	srcStat, _ := fileSrc.Stat()
 	// Print the file content
-	fmt.Fprintln(inPipe, SCP_PUSH_BEGIN_FILE, srcStat.Size(), remoteName)
+	fmt.Fprintln(inPipe, scpPushBeginFile, srcStat.Size(), remoteName)
 	io.Copy(inPipe, fileSrc)
-	fmt.Fprint(inPipe, SCP_PUSH_END)
+	fmt.Fprint(inPipe, scpPushEnd)
 }

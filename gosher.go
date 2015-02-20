@@ -12,15 +12,8 @@ import (
 )
 
 const (
-	PASSWORD_AUTH = iota
-	KEY_AUTH
-)
-
-const (
-	SCP_PUSH_BEGIN_FILE   = "C0644"
-	SCP_PUSH_BEGIN_FOLDER = "D0755 0"
-	SCP_PUSH_END_FOLDER   = "E"
-	SCP_PUSH_END          = "\x00"
+	PasswordAuthentication = iota
+	KeyAuthentication
 )
 
 // Port - 22 by default
@@ -40,10 +33,10 @@ type SshClient struct {
 // This client is meant for synchronous usage with a single host.
 // address - the hostname or ip of the remote machine
 // user - the username for the machine
-// authenticationType - the type of authentication used, can be PASSWORD_AUTH or KEY_AUTH
+// authenticationType - the type of authentication used, can be PasswordAuthentication or KeyAuthentication
 // authentication - this is the password or the path to the path to the key accorrding to the authenticationType
 func NewSshClient(address string, user string, authenticationType int, authentication string) (*SshClient, error) {
-	if authenticationType == PASSWORD_AUTH {
+	if authenticationType == PasswordAuthentication {
 		return newPasswordAuthenticatedClient(address, user, authentication), nil
 	}
 	keyAuthenticatedClient, err := newKeyAuthenticatedClient(address, user, authentication)
@@ -102,7 +95,7 @@ func getKeyFromFile(keyPath string) (ssh.Signer, error) {
 
 func (s *SshClient) newSession() error {
 	if !s.isSessionOpened {
-		hostAndPort := fmt.Sprintf("%s:%d", s.address, s.Port)
+		hostAndPort := fmt.Sprintf("%s:%d", s.Address, s.Port)
 		client, clientErr := ssh.Dial("tcp", hostAndPort, &s.clientConfiguration)
 		if clientErr != nil {
 			errorMessage := "There was an error while creating a client: " +
@@ -132,7 +125,7 @@ func (s *SshClient) Run(command string) (*SshResponse, error) {
 	if !s.StickySession {
 		defer s.CloseSession()
 	}
-	response := NewSshResponse(s.address, s.session.Stdout, s.session.Stderr)
+	response := NewSshResponse(s.Address, s.session.Stdout, s.session.Stderr)
 	if err := s.session.Run(command); err != nil {
 		errorMessage := "There was an error while executing the command: " +
 			err.Error()
@@ -154,7 +147,7 @@ func (s *SshClient) RunScript(scriptPath string) (*SshResponse, error) {
 	if !s.StickySession {
 		defer s.CloseSession()
 	}
-	response := NewSshResponse(s.address, s.session.Stdout, s.session.Stderr)
+	response := NewSshResponse(s.Address, s.session.Stdout, s.session.Stderr)
 	remotePath := fmt.Sprintf("/tmp/%s", filepath.Base(scriptPath))
 	if _, upErr := s.uploadFile(scriptPath, remotePath); upErr != nil {
 		return response, upErr
@@ -182,7 +175,7 @@ func (s *SshClient) RunOnFile(filePath string, alterContentsFunction func(fileCo
 	if !s.StickySession {
 		defer s.CloseSession()
 	}
-	response := NewSshResponse(s.address, s.session.Stdout, s.session.Stderr)
+	response := NewSshResponse(s.Address, s.session.Stdout, s.session.Stderr)
 	temporaryLocalPath := fmt.Sprintf("/tmp/%s", filepath.Base(filePath))
 	if _, downloadErr := s.download(filePath, temporaryLocalPath); downloadErr != nil {
 		return nil, downloadErr

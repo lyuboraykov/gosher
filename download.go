@@ -30,7 +30,7 @@ func (s *SshClient) download(remotePath string, localPath string) (*SshResponse,
 		useSpecifiedFilename = true
 	}
 	//from-scp
-	response := NewSshResponse(s.address, s.session.Stdout, s.session.Stderr)
+	response := NewSshResponse(s.Address, s.session.Stdout, s.session.Stderr)
 
 	if err != nil {
 		return response, err

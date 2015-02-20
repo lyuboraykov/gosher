@@ -13,10 +13,14 @@ type Host struct {
 
 // Constructor method for the Host type
 func NewHost(address string, user string, authenticationType int, authentication string,
-	resultChannel chan *SshResponse, errorChannel chan error) *Host {
+	resultChannel chan *SshResponse, errorChannel chan error) (*Host, error) {
 	host := new(Host)
-	host.Client = NewSshClient(address, user, authenticationType, authentication)
+	client, err := NewSshClient(address, user, authenticationType, authentication)
+	if err != nil {
+		return nil, err
+	}
+	host.Client = client
 	host.ResultChannel = resultChannel
 	host.ErrorChannel = errorChannel
-	return &host
+	return host, nil
 }
