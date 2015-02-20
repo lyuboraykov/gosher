@@ -13,6 +13,7 @@ type Host struct {
 	authenticationType int
 	authentication     string
 	resultChannel      chan *SshResponse
+	errorChannel       chan error
 }
 
 // Constructor method for the Host type
