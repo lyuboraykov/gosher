@@ -19,15 +19,15 @@ func NewMultipleHostsSshClient(hosts ...*Host) *MultipleHostsSshClient {
 // The result from execution is passed via the hosts' channels
 // command - the shell command to be executed on the hosts
 func (msc *MultipleHostsSshClient) Run(command string) {
-	for _, host := range msc.Hosts {
-		go func() {
-			result, err := host.Client.Run(command)
+	for i := range msc.Hosts {
+		go func(i int) {
+			result, err := msc.Hosts[i].Client.Run(command)
 			if err != nil {
-				host.ErrorChannel <- err
+				msc.Hosts[i].ErrorChannel <- err
 				return
 			}
-			host.ResultChannel <- result
-		}()
+			msc.Hosts[i].ResultChannel <- result
+		}(i)
 	}
 }
 
@@ -35,15 +35,15 @@ func (msc *MultipleHostsSshClient) Run(command string) {
 // The result from execution is passed via the hosts' channels
 // filePath - the path to the file on the local machine
 func (msc *MultipleHostsSshClient) RunScript(filePath string) {
-	for _, host := range msc.Hosts {
-		go func() {
-			result, err := host.Client.RunScript(filePath)
+	for i := range msc.Hosts {
+		go func(i int) {
+			result, err := msc.Hosts[i].Client.RunScript(filePath)
 			if err != nil {
-				host.ErrorChannel <- err
+				msc.Hosts[i].ErrorChannel <- err
 				return
 			}
-			host.ResultChannel <- result
-		}()
+			msc.Hosts[i].ResultChannel <- result
+		}(i)
 	}
 }
 
@@ -52,15 +52,15 @@ func (msc *MultipleHostsSshClient) RunScript(filePath string) {
 // remoteFilePath - the path where the file should be uploaded on the remote machines
 // The sshResponse is passed via the channels of the hosts
 func (msc *MultipleHostsSshClient) Upload(localPath string, remotePath string) {
-	for _, host := range msc.Hosts {
-		go func() {
-			result, err := host.Client.Upload(localPath, remotePath)
+	for i := range msc.Hosts {
+		go func(i int) {
+			result, err := msc.Hosts[i].Client.Upload(localPath, remotePath)
 			if err != nil {
-				host.ErrorChannel <- err
+				msc.Hosts[i].ErrorChannel <- err
 				return
 			}
-			host.ResultChannel <- result
-		}()
+			msc.Hosts[i].ResultChannel <- result
+		}(i)
 	}
 }
 
@@ -70,15 +70,15 @@ func (msc *MultipleHostsSshClient) Upload(localPath string, remotePath string) {
 // They will be suffixed with the index of the host they are downloaded from
 func (msc *MultipleHostsSshClient) Download(remotePath string, localPath string) {
 	for i, host := range msc.Hosts {
-		go func() {
+		go func(i int) {
 			suffixedDownloadPath := localPath + strconv.Itoa(i)
-			result, err := host.Client.Download(remotePath, suffixedDownloadPath)
+			result, err := msc.Hosts[i].Client.Download(remotePath, suffixedDownloadPath)
 			if err != nil {
 				host.ErrorChannel <- err
 				return
 			}
 			host.ResultChannel <- result
-		}()
+		}(i)
 	}
 }
 
@@ -89,14 +89,14 @@ func (msc *MultipleHostsSshClient) Download(remotePath string, localPath string)
 // passed to it and it should return the modified contents.
 func (msc *MultipleHostsSshClient) RunOnFile(filePath string,
 	alterContentsFunction func(fileContent string) string) {
-	for _, host := range msc.Hosts {
-		go func() {
-			result, err := host.Client.RunOnFile(filePath, alterContentsFunction)
+	for i := range msc.Hosts {
+		go func(i int) {
+			result, err := msc.Hosts[i].Client.RunOnFile(filePath, alterContentsFunction)
 			if err != nil {
-				host.ErrorChannel <- err
+				msc.Hosts[i].ErrorChannel <- err
 				return
 			}
-			host.ResultChannel <- result
-		}()
+			msc.Hosts[i].ResultChannel <- result
+		}(i)
 	}
 }
