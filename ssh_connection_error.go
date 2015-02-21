@@ -1,8 +1,8 @@
 package gosher
 
 // Standard error returned on all ssh operations
-// This means there was an error with the connection, usually
-// wrong arguments provided, not an error with the execution of the command.
+// This means there was an error with the connection or the command
+// returned an error code different from 0.
 type SshConnectionError struct {
 	errorMessage string
 }

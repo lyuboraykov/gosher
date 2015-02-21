@@ -31,10 +31,8 @@ type SshClient struct {
 
 // Initializes the SshClient.
 // This client is meant for synchronous usage with a single host.
-// address - the hostname or ip of the remote machine
-// user - the username for the machine
-// authenticationType - the type of authentication used, can be PasswordAuthentication or KeyAuthentication
-// authentication - this is the password or the path to the path to the key accorrding to the authenticationType
+// authenticationType is the type of authentication used, can be PasswordAuthentication or KeyAuthentication.
+// authentication is the password or the path to the path to the key accorrding to the authenticationType.
 func NewSshClient(address string, user string, authenticationType int, authentication string) (*SshClient, error) {
 	if authenticationType == PasswordAuthentication {
 		return newPasswordAuthenticatedClient(address, user, authentication), nil
@@ -115,7 +113,6 @@ func (s *SshClient) newSession() error {
 }
 
 // Executes shell command on the remote machine synchronously.
-// command - the shell command to be executed on the machine.
 // Returns an SshResponse and an error if any has occured.
 func (s *SshClient) Run(command string) (*SshResponse, error) {
 	sessionErr := s.newSession()
@@ -137,7 +134,6 @@ func (s *SshClient) Run(command string) (*SshResponse, error) {
 // Executes a shell script file on the remote machine.
 // It is copied in the tmp folder and ran in a single session.
 // chmod +x is applied before running.
-// scriptPath - the path to the script on the local machine
 // Returns an SshResponse and an error if any has occured
 func (s *SshClient) RunScript(scriptPath string) (*SshResponse, error) {
 	sessionErr := s.newSession()
@@ -163,9 +159,8 @@ func (s *SshClient) RunScript(scriptPath string) (*SshResponse, error) {
 
 // Executes an function on a remote text file.
 // Can be used as an alternative of executing sed or awk on the remote machine.
-// filePath - the path of the file on the remote machine
-// alterContentsFunction - the function to be executed, the contents of the file as string will be
-// passed to it and it should return the modified contents.
+// alterContentsFunction is the function to be executed, the content of the file as string will be
+// passed to it and it should return the modified content.
 // Returns SshResponse and an error if any has occured.
 func (s *SshClient) RunOnFile(filePath string, alterContentsFunction func(fileContent string) string) (*SshResponse, error) {
 	sessionErr := s.newSession()
@@ -196,10 +191,8 @@ func (s *SshClient) RunOnFile(filePath string, alterContentsFunction func(fileCo
 	return response, nil
 }
 
-// Downloads file from the remote machine.
+// Downloads file/folder from the remote machine.
 // Can be used as an alternative to scp.
-// remotePath - the path to the file on the remote machine
-// localPath - the path on the local machine where the file will be downloaded
 // Returns an SshResponse and an error if any has occured.
 func (s *SshClient) Download(remotePath string, localPath string) (*SshResponse, error) {
 	sessionErr := s.newSession()
@@ -212,10 +205,7 @@ func (s *SshClient) Download(remotePath string, localPath string) (*SshResponse,
 	return s.download(remotePath, localPath)
 }
 
-// Uploads file to the remote machine.
-// localPath - the file on the local machine to be uploaded
-// remotePath - the path on the remote machine where the file will be uploaded
-// isRecursive - whether we are working with a folder or with a file
+// Uploads file/folder to the remote machine.
 // Returns an SshResponse and an error if any has occured.
 func (s *SshClient) Upload(localPath string, remotePath string) (*SshResponse, error) {
 	localPathInfo, err := os.Stat(localPath)

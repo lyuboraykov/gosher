@@ -4,10 +4,6 @@ import "bytes"
 import "io"
 
 // Standard response returned from ssh operations
-// Address - the address/host of the machine the operation was executed on
-// ExitCode - the exit code of the exeecuted command.
-// StdOut - the standard output of the command.
-// StdErr - the standard error stream of the command.
 type SshResponse struct {
 	Address string
 	StdOut  bytes.Buffer

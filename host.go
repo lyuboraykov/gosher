@@ -1,10 +1,9 @@
 package gosher
 
 // Host - remote machine definition type.
-// Used with the multipleHostsSshClient with asynchronous execution.
-// Client - the SshClient responsible for this host
-// ResultChannel - the channel via which the SshResponse of the operations will be passed
-// ErrorChannel - the channel via which the error of the operations will be passed
+// Use with the multipleHostsSshClient with asynchronous execution.
+// ResultChannel - the channel via which the SshResponse of the operations will be passed.
+// ErrorChannel - the channel via which the error of the operations will be passed.
 type Host struct {
 	Client        *SshClient
 	ResultChannel chan *SshResponse
