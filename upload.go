@@ -16,7 +16,7 @@ const (
 )
 
 func (s *SshClient) uploadFile(localPath string, remotePath string) (*SshResponse, error) {
-	response := NewSshResponse(s.Address, s.session.Stdout, s.session.Stderr)
+	response := NewSshResponse(s.Address, &s.session)
 	go func() {
 		inPipe, _ := s.session.StdinPipe()
 		defer inPipe.Close()
@@ -30,7 +30,7 @@ func (s *SshClient) uploadFile(localPath string, remotePath string) (*SshRespons
 }
 
 func (s *SshClient) uploadFolder(localPath string, remotePath string) (*SshResponse, error) {
-	response := NewSshResponse(s.Address, s.session.Stdout, s.session.Stderr)
+	response := NewSshResponse(s.Address, &s.session)
 	go func() {
 		inPipe, _ := s.session.StdinPipe()
 		defer inPipe.Close()

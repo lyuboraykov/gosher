@@ -122,7 +122,7 @@ func (s *SshClient) Run(command string) (*SshResponse, error) {
 	if !s.StickySession {
 		defer s.CloseSession()
 	}
-	response := NewSshResponse(s.Address, s.session.Stdout, s.session.Stderr)
+	response := NewSshResponse(s.Address, &s.session)
 	if err := s.session.Run(command); err != nil {
 		errorMessage := "There was an error while executing the command: " +
 			err.Error()
@@ -143,7 +143,7 @@ func (s *SshClient) RunScript(scriptPath string) (*SshResponse, error) {
 	if !s.StickySession {
 		defer s.CloseSession()
 	}
-	response := NewSshResponse(s.Address, s.session.Stdout, s.session.Stderr)
+	response := NewSshResponse(s.Address, &s.session)
 	remotePath := fmt.Sprintf("/tmp/%s", filepath.Base(scriptPath))
 	if _, upErr := s.uploadFile(scriptPath, remotePath); upErr != nil {
 		return response, upErr
@@ -170,7 +170,7 @@ func (s *SshClient) RunOnFile(filePath string, alterContentsFunction func(fileCo
 	if !s.StickySession {
 		defer s.CloseSession()
 	}
-	response := NewSshResponse(s.Address, s.session.Stdout, s.session.Stderr)
+	response := NewSshResponse(s.Address, &s.session)
 	temporaryLocalPath := fmt.Sprintf("/tmp/%s", filepath.Base(filePath))
 	if _, downloadErr := s.download(filePath, temporaryLocalPath); downloadErr != nil {
 		return nil, downloadErr

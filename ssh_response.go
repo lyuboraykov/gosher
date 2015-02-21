@@ -1,7 +1,9 @@
 package gosher
 
-import "bytes"
-import "io"
+import (
+	"bytes"
+	"golang.org/x/crypto/ssh"
+)
 
 // Standard response returned from ssh operations
 type SshResponse struct {
@@ -10,10 +12,10 @@ type SshResponse struct {
 	StdErr  bytes.Buffer
 }
 
-func NewSshResponse(host string, sessionStdout io.Writer, sessionStderr io.Writer) *SshResponse {
+func NewSshResponse(host string, session *ssh.Session) *SshResponse {
 	response := new(SshResponse)
 	response.Address = host
-	sessionStdout = &response.StdOut
-	sessionStderr = &response.StdErr
+	session.Stdout = &response.StdOut
+	session.Stderr = &response.StdErr
 	return response
 }

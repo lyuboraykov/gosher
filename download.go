@@ -18,19 +18,19 @@ func (s *SshClient) download(remotePath string, localPath string) (*SshResponse,
 		if !os.IsNotExist(err) {
 			return nil, err
 		} else {
-			//OK - create file/dir
+			// OK - create file/dir
 			useSpecifiedFilename = true
 		}
 	} else if localPathInfo.IsDir() {
-		//ok - use name of remotePath
+		// ok - use name of remotePath
 		destinationDirectory = localPath
 		useSpecifiedFilename = false
 	} else {
 		destinationDirectory = filepath.Dir(localPath)
 		useSpecifiedFilename = true
 	}
-	//from-scp
-	response := NewSshResponse(s.Address, s.session.Stdout, s.session.Stderr)
+	// from-scp
+	response := NewSshResponse(s.Address, &s.session)
 
 	if err != nil {
 		return response, err
@@ -61,7 +61,7 @@ func (s *SshClient) manageDownloads(errorChannel chan error, destinationDirector
 		errorChannel <- err
 		return
 	}
-	//use a scanner for processing individual commands, but not files themselves
+	// use a scanner for processing individual commands, but not files themselves
 	scanner := bufio.NewScanner(outPipe)
 	more := true
 	isFirstCommand := true
@@ -70,7 +70,7 @@ func (s *SshClient) manageDownloads(errorChannel chan error, destinationDirector
 		commandLength, err := outPipe.Read(commandArray)
 		if err != nil {
 			if err == io.EOF {
-				//no problem.
+				// no problem.
 			} else {
 				errorChannel <- err
 			}
@@ -83,9 +83,9 @@ func (s *SshClient) manageDownloads(errorChannel chan error, destinationDirector
 		command := commandArray[0]
 		switch command {
 		case 0x0:
-			//continue
+			// continue
 		case 'E':
-			//E command: go back out of dir
+			// E command: go back out of dir
 			destinationDirectory = filepath.Dir(destinationDirectory)
 			err = sendByte(inPipe, 0)
 			if err != nil {
@@ -93,7 +93,7 @@ func (s *SshClient) manageDownloads(errorChannel chan error, destinationDirector
 				return
 			}
 		case 0xA:
-			//0xA command: end?
+			// 0xA command: end?
 			err = sendByte(inPipe, 0)
 			if err != nil {
 				errorChannel <- err
@@ -105,15 +105,15 @@ func (s *SshClient) manageDownloads(errorChannel chan error, destinationDirector
 			err = scanner.Err()
 			if err != nil {
 				if err == io.EOF {
-					// no problem.
+					//  no problem.
 				} else {
 					errorChannel <- err
 				}
 				return
 			}
-			// first line
+			//  first line
 			fullCommand := scanner.Text()
-			// remainder, split by spaces
+			//  remainder, split by spaces
 			splitCommands := strings.SplitN(fullCommand, " ", 3)
 
 			switch command {
@@ -152,7 +152,7 @@ func (s *SshClient) manageWrites(splitCommands []string, inPipe io.WriteCloser, 
 	}
 	rcvFilename := splitCommands[2]
 	var filename string
-	//use the specified filename from the destination (only for top-level item)
+	// use the specified filename from the destination (only for top-level item)
 	if useSpecifiedFilename && isFirstCommand {
 		filename = filepath.Base(localPath)
 	} else {
@@ -163,13 +163,13 @@ func (s *SshClient) manageWrites(splitCommands []string, inPipe io.WriteCloser, 
 		return err
 	}
 	if command == 'C' {
-		//C command - file
+		// C command - file
 		if err = s.writeFileFromPipe(destinationDirectory, filename, inPipe,
 			commandLength, commandSize, outPipe); err != nil {
 			return err
 		}
 	} else {
-		//D command (directory)
+		// D command (directory)
 		thisDstFile := filepath.Join(destinationDirectory, filename)
 		fileMode := os.FileMode(uint32(mode))
 		err = os.MkdirAll(thisDstFile, fileMode)
@@ -192,7 +192,7 @@ func (s *SshClient) writeFileFromPipe(destinationDirectory string, filename stri
 	}
 	defer fileWriter.Close()
 
-	//buffered by 4096 bytes
+	// buffered by 4096 bytes
 	bufferSize := int64(4096)
 	for tot < commandSize {
 		if bufferSize > commandSize-tot {
@@ -204,24 +204,24 @@ func (s *SshClient) writeFileFromPipe(destinationDirectory string, filename stri
 			return err
 		}
 		tot += int64(commandLength)
-		//write to file
+		// write to file
 		_, err = fileWriter.Write(b[:commandLength])
 		if err != nil {
 			return err
 		}
 	}
-	//close file writer & check error
+	// close file writer & check error
 	err = fileWriter.Close()
 	if err != nil {
 		return err
 	}
-	//get next byte from channel reader
+	// get next byte from channel reader
 	nextByte := make([]byte, 1)
 	_, err = outPipe.Read(nextByte)
 	if err != nil {
 		return err
 	}
-	//send null-byte back
+	// send null-byte back
 	_, err = inPipe.Write([]byte{0})
 	if err != nil {
 		return err
