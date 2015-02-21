@@ -19,6 +19,10 @@ import "github.com/lyuboraykov/gosher"
 ```
 and use `go get` without parameters.
 
+Documentation
+-----
+You can read more about the interface here: [Godoc](https://godoc.org/github.com/lyuboraykov/gosher)
+
 Usage
 -----
 
@@ -31,29 +35,40 @@ Here is an example synchronous Hello World on a single host:
 import "github.com/lyuboraykov/gosher"
 
 // ...
-client := NewSshClient("10.23.123.192", "root", PASSWORD_AUTH, "password")
-response, err := client.ExecuteCommand("echo 'Hello World!'")
+client := gosher.NewSshClient("10.23.123.192", "root", gosher.PasswordAuthentication, "password")
+response, err := client.Run("echo 'Hello World!'")
 if err == nil {
-   if response.ExitCode == 0 {
-      fmt.Println(response.StdOut.String())
-   }
-   else {
-      fmt.Printf("There was an error while executing the command: %s \n", response.StdErr.String())
-   }
+   fmt.Println(response.StdOut.String())
 }
 else {
    fmt.Printf("There was an error while connecting to the server: %s \n", err.Error())
 }
 ```
 
-And here is the same on two hosts async: 
+Here is a simple file upload: 
+```go
+import "github.com/lyuboraykov/gosher"
+
+// ...
+client := gosher.NewSshClient("10.23.123.192", "root", gosher.KeyAuthentication, "/home/user/.ssh/id_rsa")
+response, err := client.Upload("somefile", "somelocation")
+if err == nil {
+   fmt.Println(response.StdOut.String())
+}
+else {
+   fmt.Printf("There was an error while connecting to the server: %s \n", err.Error())
+}
+```
+
+And here is a hello world on two hosts async: 
 
 ```go
-receiveChannel := make(chan<- *SshResponse)
-host1 = NewHost("10.23.123.191", "root", PASSWORD_AUTH, "password", receiveChannel)
-host2 = NewHost("10.23.123.192", "root", PASSWORD_AUTH, "password", receiveChannel)
+receiveChannel := make(chan *SshResponse)
+errorChannel := make(chan error)
+host1 = gosher.NewHost("10.23.123.191", "root", PasswordAuthentication, "password", receiveChannel, errorChannel)
+host2 = gosher.NewHost("10.23.123.192", "root", PasswordAuthentication, "password", receiveChannel, errorChannel)
 client = NewMultipleHostsSshClient(&host1, &host2)
-err := client.ExecuteCommandOnAllHosts("echo 'Hello World'")
+err := client.Run("echo 'Hello World'")
 if err == nil {
    response1 := <-receiveChannel
    response2 := <-receiveChannel
@@ -61,34 +76,34 @@ if err == nil {
 }
 ```
 
-Now let's get more advanced and execute a function on a file on selected hosts:
+Now let's get more advanced and execute a function on a file on multiple hosts:
 
 ```go
-receiveChannel := make(chan<- *SshResponse, 2)
-host1 := NewHost("10.23.123.191", "root", PASSWORD_AUTH, "password", receiveChannel)
-host2 := NewHost("10.23.123.192", "root", KEY_AUTH, "~/.ssh/id_rsa.pub", receiveChannel)
-host3 := NewHost("10.23.123.193", "root", PASSWORD_AUTH, "password", receiveChannel)
+receiveChannel := make(chan *SshResponse, 2)
+errorChannel := make(chan error, 2)
+host1 := NewHost("10.23.123.191", "root", gosher.PasswordAuthentication, "password", receiveChannel, errorChannel)
+host2 := NewHost("10.23.123.192", "root", goser.KeyAuthentication, "~/.ssh/id_rsa", receiveChannel, errorChannel)
+host3 := NewHost("10.23.123.193", "root", gosher.PasswordAuthentication, "password", receiveChannel, errorChannel)
 client := NewMultipleHostsSshClient(host1, host2, host3)
-err := client.ExecuteOnFileOnSelectedHosts("/tmp/test_file" func(fileContent string) {
+err := client.RunOnFile("/tmp/test_file" func(fileContent string) {
    return fileContent + " appended text"
-   }, 0, 1)
+   })
 if err == nil {
    response1 := <-receiveChannel
    response2 := <-receiveChannel
-   fmt.Println(response1.ExitCode)
+   fmt.Println("Success!")
 }
 ```
 
 Features
 --------
 All of these features are supported both on a single host and on multiple hosts
-and on selected hosts only
 
 *   **Execute Command** Executes a simple shell command
 
 *   **Execute Script** Executes a local script on remote machine
 
-*   **Upload/Download File** provides scp functionality
+*   **Upload/Download** provides scp functionality
 
 *   **Execute on file** executes a function on a remote file, can be used
     instead of awk/sed
@@ -96,7 +111,7 @@ and on selected hosts only
 Todo
 ----
 
-Add real implementation of the interface.
+Do a full test coverage.
 
 License
 -------
