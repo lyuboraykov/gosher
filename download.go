@@ -35,7 +35,6 @@ func (s *SshClient) download(remotePath string, localPath string) (*SshResponse,
 	if err != nil {
 		return response, err
 	}
-	defer s.session.Close()
 	errorChannel := make(chan error)
 	go s.manageDownloads(errorChannel, destinationDirectory, useSpecifiedFilename, localPath)
 	remoteOpts := "-fr"
